@@ -1,8 +1,13 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import langgraph_agent_lab.cli as cli
 from langgraph_agent_lab.metrics import MetricsReport, metric_from_state, summarize_metrics
 from langgraph_agent_lab.state import Route, Scenario
+from typer.testing import CliRunner
+
+
+runner = CliRunner()
 
 
 def test_metric_uses_measured_latency_and_real_interrupt_event() -> None:
@@ -84,3 +89,50 @@ def test_run_scenarios_records_measured_latency(tmp_path: Path, monkeypatch) -> 
 
     assert captured
     assert captured[0].scenario_metrics[0].latency_ms == 25
+
+
+def test_export_graph_command_writes_compiled_mermaid(tmp_path: Path, monkeypatch) -> None:
+    mermaid = "graph TD; intake-->classify; classify-->approval; approval-->dead_letter; dead_letter-->finalize"
+
+    class FakeView:
+        def draw_mermaid(self) -> str:
+            return mermaid
+
+    class FakeGraph:
+        def get_graph(self) -> FakeView:
+            return FakeView()
+
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer=None: FakeGraph())
+    output = tmp_path / "graph.mmd"
+    result = runner.invoke(cli.app, ["export-graph", "--output", str(output)])
+    assert result.exit_code == 0
+    assert output.read_text(encoding="utf-8") == mermaid
+
+
+def test_state_history_command_prints_compact_facts(monkeypatch) -> None:
+    snapshots = [
+        SimpleNamespace(
+            config={"configurable": {"checkpoint_id": "cp-1"}},
+            values={
+                "route": "error",
+                "attempt": 1,
+                "events": [{"node": "finalize"}],
+            },
+        )
+    ]
+
+    class FakeGraph:
+        def get_state_history(self, config: dict) -> list[SimpleNamespace]:
+            return snapshots
+
+    monkeypatch.setattr(cli, "build_checkpointer", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer=None: FakeGraph())
+    result = runner.invoke(
+        cli.app,
+        ["state-history", "--database", "ignored.sqlite", "--thread-id", "thread-x"],
+    )
+    assert result.exit_code == 0
+    assert "cp-1" in result.stdout
+    assert "route=error" in result.stdout
+    assert "attempt=1" in result.stdout
+    assert "finalized=yes" in result.stdout
