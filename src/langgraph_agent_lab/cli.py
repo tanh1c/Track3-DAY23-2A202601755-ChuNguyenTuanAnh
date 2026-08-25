@@ -19,7 +19,12 @@ from .persistence import build_checkpointer
 from .report import write_report
 from .scenarios import load_scenarios
 from .state import initial_state
-from .time_travel import find_checkpoint, fork_checkpoint, replay_checkpoint, verify_time_travel
+from .time_travel import (
+    find_checkpoint,
+    fork_checkpoint,
+    replay_checkpoint,
+    verify_time_travel,
+)
 from .ui import verify_ui_view_model
 
 app = typer.Typer(no_args_is_help=True)
@@ -178,7 +183,9 @@ def verify_bonus(
     database: Annotated[Path, typer.Option("--database")] = Path(
         "outputs/bonus-checkpoints.sqlite"
     ),
-    output: Annotated[Path, typer.Option("--output")] = Path("outputs/bonus_evidence.json"),
+    output: Annotated[Path, typer.Option("--output")] = Path(
+        "outputs/bonus_evidence.json"
+    ),
     metrics_path: Annotated[Path | None, typer.Option("--metrics")] = None,
     report_path: Annotated[Path | None, typer.Option("--report")] = None,
     llm_judge_verified: Annotated[bool, typer.Option("--llm-judge-verified")] = False,
