@@ -81,9 +81,19 @@ def test_report_renders_all_official_extensions_from_evidence() -> None:
         "Mermaid export",
     ):
         assert extension in text
+    for heading in (
+        "Baseline",
+        "Implementation",
+        "Verification",
+        "Evidence",
+        "Limitations",
+    ):
+        assert heading in text
     assert "interrupt + same-thread" in text
     assert "replay + fork" in text
     assert "3 tasks -> 3 reducer results" in text
+    assert "streamlit run src/langgraph_agent_lab/ui.py" in text
+    assert "presentation smoke, not browser E2E" in text
 
 
 def test_report_remains_backward_compatible_without_bonus() -> None:
