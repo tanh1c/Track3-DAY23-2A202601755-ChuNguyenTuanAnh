@@ -62,12 +62,22 @@ def verify_parallel_send(tasks: list[str] | None = None) -> ParallelSendEvidence
     """Run fan-out and derive evidence from actual Send objects and reducer output."""
     requested = list(tasks or ["account", "order", "policy"])
     sends = plan_tasks({"tasks": requested, "results": []})
-    used_send = len(sends) == len(requested) and all(isinstance(item, Send) for item in sends)
+    used_send = len(sends) == len(requested) and all(
+        isinstance(item, Send) for item in sends
+    )
     final = build_parallel_bonus_graph().invoke({"tasks": requested, "results": []})
     results = list(final.get("results", []) or [])
     expected = sorted(requested)
-    deterministic = sorted(results) == expected and final.get("aggregate") == "|".join(expected)
-    verified = used_send and len(requested) > 1 and len(results) == len(requested) and deterministic
+    deterministic = (
+        sorted(results) == expected
+        and final.get("aggregate") == "|".join(expected)
+    )
+    verified = (
+        used_send
+        and len(requested) > 1
+        and len(results) == len(requested)
+        and deterministic
+    )
 
     return ParallelSendEvidence(
         implemented=True,
