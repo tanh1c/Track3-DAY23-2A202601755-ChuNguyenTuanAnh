@@ -20,6 +20,11 @@ _PRESENTATION_KEYS = (
     "events",
 )
 _PROVIDER_VARS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY")
+_SECRET_SENTINELS = {
+    "OPENAI_API_KEY": "openai-ui-secret-sentinel",
+    "GEMINI_API_KEY": "gemini-ui-secret-sentinel",
+    "ANTHROPIC_API_KEY": "anthropic-ui-secret-sentinel",
+}
 
 
 def build_view_model(
@@ -42,7 +47,7 @@ def build_view_model(
 
 
 def verify_ui_view_model() -> UiEvidence:
-    """Verify required display fields while proving configured secrets are not projected."""
+    """Verify required display fields and non-vacuous environment secret isolation."""
     state: AgentState = {
         "thread_id": "bonus-ui-thread",
         "query": "refund order",
@@ -64,11 +69,23 @@ def verify_ui_view_model() -> UiEvidence:
             }
         ],
     }
-    view = build_view_model(state, checkpoint_id="bonus-ui-checkpoint")
+    previous = {name: os.environ.get(name) for name in _PROVIDER_VARS}
+    try:
+        for name, sentinel in _SECRET_SENTINELS.items():
+            os.environ[name] = sentinel
+        view = build_view_model(state, checkpoint_id="bonus-ui-checkpoint")
+        serialized = json.dumps(view, sort_keys=True, default=str)
+        secret_safe = not any(
+            sentinel in serialized for sentinel in _SECRET_SENTINELS.values()
+        )
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
     view_model_verified = tuple(view) == _PRESENTATION_KEYS
-    serialized = json.dumps(view, sort_keys=True, default=str)
-    secrets = [value for name in _PROVIDER_VARS if (value := os.getenv(name))]
-    secret_safe = not any(secret in serialized for secret in secrets)
     verified = view_model_verified and secret_safe
     return UiEvidence(
         implemented=True,
