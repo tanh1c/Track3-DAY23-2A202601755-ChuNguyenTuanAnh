@@ -48,7 +48,8 @@ def test_report_contains_required_evidence_sections() -> None:
 def test_report_contains_student_repo_commit_and_date(monkeypatch) -> None:
     monkeypatch.setenv("GITHUB_SHA", "abc123def456")
     text = render_report(_sample_report())
-    assert "Chu Nguyen Tuan Anh" in text
+    assert "Chu Nguyễn Tuấn Anh" in text
+    assert "MSSV: `2A202601755`" in text
     assert "tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh" in text
     assert "abc123def456" in text
     assert "Report date" in text
