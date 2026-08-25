@@ -10,7 +10,8 @@ from .bonus_evidence import BonusEvidence
 from .metrics import MetricsReport
 
 
-STUDENT_NAME = "Chu Nguyen Tuan Anh"
+STUDENT_NAME = "Chu Nguyễn Tuấn Anh"
+STUDENT_ID = "2A202601755"
 REPOSITORY = "tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh"
 
 
@@ -28,6 +29,7 @@ def _bonus_rows(
 ) -> list[tuple[str, str, str, str, bool, str, str]]:
     """Translate typed bonus evidence into the official extension proof matrix."""
     hitl = bonus.hitl
+    recovery = bonus.recovery
     time_travel = bonus.time_travel
     parallel = bonus.parallel_send
     ui = bonus.streamlit_ui
@@ -35,11 +37,11 @@ def _bonus_rows(
         (
             "LLM-as-judge",
             "deterministic evaluator fallback",
-            "structured verdict with one bounded live judge call",
-            "live provider gate plus evaluator tests",
+            "structured verdict with reason, 20s timeout, fallback, and zero provider retries",
+            "live provider gate plus evaluator budget tests",
             bonus.llm_as_judge_verified,
-            "structured evaluator exercised in live verification",
-            "provider failure still falls back deterministically",
+            "one bounded structured judge call; timeout=20s; max_retries=0",
+            "provider/schema/timeout failure falls back deterministically",
         ),
         (
             "Real HITL",
@@ -55,12 +57,15 @@ def _bonus_rows(
         ),
         (
             "SQLite recovery",
-            "memory checkpointer available for lightweight tests",
-            "durable SQLite saver with stable thread IDs",
-            "fresh saver reads a previously completed thread",
+            "fresh saver recovery in the core scenario runner",
+            "writer subprocess exits before a distinct reader subprocess loads the checkpoint",
+            "two Python processes use one SQLite DB and the same stable thread_id",
             bonus.durable_recovery_verified,
-            "resume_success from restart-style recovery proof",
-            "Postgres is intentionally not required by the SQLite/Postgres option",
+            (
+                f"writer PID {recovery.writer_pid} -> reader PID {recovery.reader_pid}; "
+                f"thread={recovery.thread_id or '-'}; finalized={_yes_no(recovery.persisted_finalized)}"
+            ),
+            "SQLite path is proven; Postgres is not exercised",
         ),
         (
             "Time travel",
@@ -120,6 +125,7 @@ def render_report(metrics: MetricsReport, bonus: BonusEvidence | None = None) ->
         "## Student",
         "",
         f"- Name: {STUDENT_NAME}",
+        f"- MSSV: `{STUDENT_ID}`",
         f"- Repository: `{REPOSITORY}`",
         f"- Commit: `{_commit_label()}`",
         f"- Report date: {date.today().isoformat()}",
@@ -199,8 +205,8 @@ def render_report(metrics: MetricsReport, bonus: BonusEvidence | None = None) ->
     )
     if metrics.resume_success:
         lines.append(
-            "- Recovery evidence indicates a fresh SQLite-backed graph instance could read a "
-            "previously completed thread by its stable `thread_id`."
+            "- Core recovery evidence indicates a fresh SQLite-backed graph instance could read "
+            "a previously completed thread by its stable `thread_id`."
         )
     else:
         lines.append(
@@ -210,12 +216,12 @@ def render_report(metrics: MetricsReport, bonus: BonusEvidence | None = None) ->
 
     lines.extend(["", "## Extension Work", ""])
     lines.append(
-        "- LLM-as-judge: live provider runs use one structured evaluation call per tool result; "
-        "provider/schema failures fall back deterministically without an internal retry loop."
+        "- LLM-as-judge: one structured verdict call has an explicit 20-second request timeout "
+        "and zero provider retries; provider/schema/timeout failure falls back deterministically."
     )
     lines.append(
-        "- SQLite persistence: durable checkpointer support uses WAL and stable thread IDs; "
-        "state-history inspection is read-only."
+        "- SQLite persistence: durable checkpointer support uses WAL and stable thread IDs; the "
+        "bonus verifier proves survival across two distinct Python processes."
     )
     if metrics.total_interrupts > 0:
         lines.append(
@@ -256,8 +262,8 @@ def render_report(metrics: MetricsReport, bonus: BonusEvidence | None = None) ->
             "## Improvement Plan",
             "",
             "The next production priority is replacing the deterministic mock tool with "
-            "idempotent provider adapters that have explicit timeout/retry budgets, while keeping "
-            "the current approval boundary and checkpoint/audit contracts unchanged.",
+            "idempotent provider adapters while keeping the current bounded LLM judge, approval "
+            "boundary, persistence, and checkpoint/audit contracts unchanged.",
             "",
         ]
     )
