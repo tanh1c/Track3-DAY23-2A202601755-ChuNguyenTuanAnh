@@ -9,7 +9,71 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .llm import configured_provider, get_llm
+from .schemas import ClassificationDecision, EvaluationDecision
 from .state import AgentState, ApprovalDecision, make_event
+
+
+CLASSIFICATION_PROMPT = """You route support tickets for a LangGraph workflow.
+Return one route using the structured schema. Use semantic intent, never scenario IDs.
+Apply this priority when multiple intents appear: risky > tool > missing_info > error > simple.
+
+Definitions:
+- risky: requests that cause side effects or mutations, e.g. refund, delete, send, update,
+  cancel, charge, or change an account/order; these require approval.
+- tool: lookup/retrieval/status requests that need an external tool but do not mutate data.
+- missing_info: too vague/incomplete to act safely or answer specifically.
+- error: the ticket primarily reports a timeout, failure, exception, outage, or processing error.
+- simple: informational/how-to support that can be answered directly.
+
+Ticket:
+{query}
+"""
+
+
+def _message_text(response: Any) -> str:
+    """Normalize common LangChain response shapes to non-empty text."""
+    content = getattr(response, "content", response)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get("text"):
+                parts.append(str(item["text"]))
+        return "\n".join(parts).strip()
+    return str(content).strip()
+
+
+def _fallback_route(query: str) -> str:
+    """Conservative auditable fallback used only when structured LLM routing fails."""
+    text = query.lower()
+    risky = (
+        "refund",
+        "delete",
+        "remove account",
+        "send email",
+        "send confirmation",
+        "cancel",
+        "charge",
+        "change plan",
+        "update account",
+        "reset another",
+    )
+    tool = ("lookup", "look up", "order status", "track order", "find order", "check status")
+    missing = ("fix it", "can you fix", "help with it", "not working", "do this")
+    error = ("timeout", "failure", "failed", "exception", "error", "outage", "cannot recover")
+    if any(token in text for token in risky):
+        return "risky"
+    if any(token in text for token in tool):
+        return "tool"
+    if any(token in text for token in missing) or len(text.split()) <= 3:
+        return "missing_info"
+    if any(token in text for token in error):
+        return "error"
+    return "simple"
 
 
 def intake_node(state: AgentState) -> dict[str, Any]:
@@ -23,8 +87,34 @@ def intake_node(state: AgentState) -> dict[str, Any]:
 
 
 def classify_node(state: AgentState) -> dict[str, Any]:
-    """Classify intent using a real structured-output LLM (implemented in next TDD task)."""
-    raise NotImplementedError("TODO(student): implement LLM-based classification")
+    """Classify intent through real structured-output LLM routing."""
+    query = state.get("query", "").strip()
+    try:
+        decision = (
+            get_llm(temperature=0.0)
+            .with_structured_output(ClassificationDecision)
+            .invoke(CLASSIFICATION_PROMPT.format(query=query))
+        )
+        if not isinstance(decision, ClassificationDecision):
+            decision = ClassificationDecision.model_validate(decision)
+        route = decision.route
+        reason = decision.reason
+        event_type = "completed"
+        errors: list[str] = []
+    except Exception as exc:
+        route = _fallback_route(query)
+        reason = f"structured classifier fallback: {type(exc).__name__}"
+        event_type = "fallback"
+        errors = [reason]
+
+    update: dict[str, Any] = {
+        "route": route,
+        "risk_level": "high" if route == "risky" else "low",
+        "events": [make_event("classify", event_type, f"route={route}", reason=reason)],
+    }
+    if errors:
+        update["errors"] = errors
+    return update
 
 
 def tool_node(state: AgentState) -> dict[str, Any]:
@@ -55,19 +145,97 @@ def tool_node(state: AgentState) -> dict[str, Any]:
 
 
 def evaluate_node(state: AgentState) -> dict[str, Any]:
-    """Base evaluator: deterministic latest-result heuristic."""
+    """Evaluate the latest result with one live judge call or a deterministic fallback."""
     results = state.get("tool_results") or []
     latest = str(results[-1]) if results else "ERROR: no tool result available"
-    verdict = "needs_retry" if "ERROR" in latest.upper() else "success"
-    return {
-        "evaluation_result": verdict,
-        "events": [make_event("evaluate", "completed", f"verdict={verdict}", mode="heuristic")],
-    }
+    heuristic = "needs_retry" if "ERROR" in latest.upper() else "success"
+
+    if configured_provider() is None or os.getenv("LLM_JUDGE", "true").lower() == "false":
+        return {
+            "evaluation_result": heuristic,
+            "events": [
+                make_event("evaluate", "completed", f"verdict={heuristic}", mode="heuristic")
+            ],
+        }
+
+    prompt = (
+        "Judge exactly one tool result. Return needs_retry only when the result indicates "
+        "failure, incomplete execution, or unusable evidence; otherwise return success.\n\n"
+        f"Tool result:\n{latest}"
+    )
+    try:
+        decision = (
+            get_llm(temperature=0.0)
+            .with_structured_output(EvaluationDecision)
+            .invoke(prompt)
+        )
+        if not isinstance(decision, EvaluationDecision):
+            decision = EvaluationDecision.model_validate(decision)
+        return {
+            "evaluation_result": decision.verdict,
+            "events": [
+                make_event(
+                    "evaluate",
+                    "completed",
+                    f"verdict={decision.verdict}",
+                    mode="llm-as-judge",
+                    reason=decision.reason,
+                )
+            ],
+        }
+    except Exception as exc:
+        error = f"judge fallback: {type(exc).__name__}"
+        return {
+            "evaluation_result": heuristic,
+            "errors": [error],
+            "events": [
+                make_event(
+                    "evaluate",
+                    "fallback",
+                    f"verdict={heuristic}",
+                    mode="heuristic",
+                    error=error,
+                )
+            ],
+        }
 
 
 def answer_node(state: AgentState) -> dict[str, Any]:
-    """Generate a grounded final answer using a real LLM (implemented in next TDD task)."""
-    raise NotImplementedError("TODO(student): implement LLM-grounded answer generation")
+    """Generate a final response grounded in workflow evidence using the real LLM."""
+    query = state.get("query", "").strip()
+    tool_results = state.get("tool_results") or []
+    proposed_action = state.get("proposed_action", "")
+    approval = state.get("approval") or {}
+    context = (
+        f"User query: {query}\n"
+        f"Tool results: {tool_results}\n"
+        f"Proposed action: {proposed_action or 'none'}\n"
+        f"Approval: {approval or 'none'}\n"
+    )
+    prompt = (
+        "You are a concise support assistant. Answer only from the supplied workflow context. "
+        "Do not claim an action happened unless a successful tool result proves it. If evidence is "
+        "limited, state that limitation.\n\n" + context
+    )
+    try:
+        text = _message_text(get_llm(temperature=0.0).invoke(prompt))
+        if not text:
+            raise ValueError("empty LLM response")
+        return {
+            "final_answer": text,
+            "events": [make_event("answer", "completed", "grounded LLM answer generated")],
+        }
+    except Exception as exc:
+        error = f"answer fallback: {type(exc).__name__}"
+        if tool_results:
+            fallback = f"I could not generate the model response. Latest verified result: {tool_results[-1]}"
+        else:
+            fallback = "I could not generate the model response from the available context."
+        return {
+            "final_answer": fallback,
+            "errors": [error],
+            "events": [make_event("answer", "fallback", error)],
+        }
 
 
 def ask_clarification_node(state: AgentState) -> dict[str, Any]:
