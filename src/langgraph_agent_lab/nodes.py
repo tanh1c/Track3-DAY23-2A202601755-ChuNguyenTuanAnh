@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from .llm import configured_provider, get_llm
-from .schemas import ClassificationDecision, EvaluationDecision
+from .schemas import ClassificationDecision, ClassificationRoute, EvaluationDecision
 from .state import AgentState, ApprovalDecision, make_event
 
 
@@ -58,7 +58,7 @@ def _message_text(response: Any) -> str:
     return str(content).strip()
 
 
-def _fallback_route(query: str) -> str:
+def _fallback_route(query: str) -> ClassificationRoute:
     """Conservative auditable fallback used only when structured LLM routing fails."""
     text = query.lower()
     risky = (
