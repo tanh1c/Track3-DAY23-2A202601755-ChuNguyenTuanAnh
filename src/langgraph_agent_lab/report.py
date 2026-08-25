@@ -63,7 +63,8 @@ def _bonus_rows(
             bonus.durable_recovery_verified,
             (
                 f"writer PID {recovery.writer_pid} -> reader PID {recovery.reader_pid}; "
-                f"thread={recovery.thread_id or '-'}; finalized={_yes_no(recovery.persisted_finalized)}"
+                f"thread={recovery.thread_id or '-'}; "
+                f"finalized={_yes_no(recovery.persisted_finalized)}"
             ),
             "SQLite path is proven; Postgres is not exercised",
         ),
