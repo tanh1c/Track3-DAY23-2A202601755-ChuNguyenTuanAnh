@@ -44,7 +44,11 @@ def _render(state: TimeTravelDemoState) -> dict[str, object]:
 
 
 def _finalize_demo(state: TimeTravelDemoState) -> dict[str, object]:
-    return {"events": [{"node": "finalize", "topic": str(state.get("topic", ""))}]}
+    return {
+        "events": [
+            {"node": "finalize", "topic": str(state.get("topic", ""))}
+        ]
+    }
 
 
 def build_time_travel_demo_graph(checkpointer: Any) -> Any:
@@ -124,22 +128,33 @@ def verify_time_travel(database_url: str) -> TimeTravelEvidence:
     graph = build_time_travel_demo_graph(build_checkpointer("sqlite", database_url))
     thread_id = f"bonus-time-travel-{uuid4().hex[:10]}"
     config = {"configurable": {"thread_id": thread_id}}
-    graph.invoke({"topic": "baseline", "rendered": "", "events": []}, config=config)
+    graph.invoke(
+        {"topic": "baseline", "rendered": "", "events": []},
+        config=config,
+    )
 
     history = list_checkpoints(graph, thread_id)
-    selectable = next((item for item in history if item.next_nodes == ("render",)), None)
+    selectable = next(
+        (item for item in history if item.next_nodes == ("render",)),
+        None,
+    )
     if selectable is None:
         raise RuntimeError("No replayable checkpoint before render")
     selected = find_checkpoint(graph, thread_id, selectable.checkpoint_id)
 
     replayed = replay_checkpoint(graph, selected)
-    replay_verified = replayed.get("rendered") == "render:baseline" and _finalized(replayed)
+    replay_verified = replayed.get("rendered") == "render:baseline" and _finalized(
+        replayed
+    )
 
     before_fork = {item.checkpoint_id for item in list_checkpoints(graph, thread_id)}
     fork_config, forked = fork_checkpoint(graph, selected, {"topic": "forked"})
     after_fork = {item.checkpoint_id for item in list_checkpoints(graph, thread_id)}
-    fork_checkpoint_id = str(dict(fork_config.get("configurable", {}) or {}).get("checkpoint_id", ""))
-    history_preserved = before_fork <= after_fork and selectable.checkpoint_id in after_fork
+    configurable = dict(fork_config.get("configurable", {}) or {})
+    fork_checkpoint_id = str(configurable.get("checkpoint_id", ""))
+    history_preserved = (
+        before_fork <= after_fork and selectable.checkpoint_id in after_fork
+    )
     fork_verified = (
         bool(fork_checkpoint_id)
         and fork_checkpoint_id not in before_fork
