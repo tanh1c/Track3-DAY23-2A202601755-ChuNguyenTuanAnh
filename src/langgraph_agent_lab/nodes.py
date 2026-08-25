@@ -239,7 +239,10 @@ def answer_node(state: AgentState) -> dict[str, Any]:
     except Exception as exc:
         error = f"answer fallback: {type(exc).__name__}"
         if tool_results:
-            fallback = f"I could not generate the model response. Latest verified result: {tool_results[-1]}"
+            fallback = (
+                "I could not generate the model response. Latest verified result: "
+                f"{tool_results[-1]}"
+            )
         else:
             fallback = "I could not generate the model response from the available context."
         return {
