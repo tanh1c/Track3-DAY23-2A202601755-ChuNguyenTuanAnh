@@ -2,8 +2,8 @@ from langgraph_agent_lab.metrics import MetricsReport, ScenarioMetric
 from langgraph_agent_lab.report import render_report
 
 
-def test_report_contains_required_evidence_sections() -> None:
-    report = MetricsReport(
+def _sample_report() -> MetricsReport:
+    return MetricsReport(
         total_scenarios=1,
         success_rate=1.0,
         avg_nodes_visited=4.0,
@@ -26,7 +26,10 @@ def test_report_contains_required_evidence_sections() -> None:
             )
         ],
     )
-    text = render_report(report)
+
+
+def test_report_contains_required_evidence_sections() -> None:
+    text = render_report(_sample_report())
     for heading in (
         "Architecture",
         "State Schema",
@@ -40,6 +43,15 @@ def test_report_contains_required_evidence_sections() -> None:
     assert "synthetic" in text
     assert "25" in text
     assert "resume_success" in text
+
+
+def test_report_contains_student_repo_commit_and_date(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_SHA", "abc123def456")
+    text = render_report(_sample_report())
+    assert "Chu Nguyen Tuan Anh" in text
+    assert "tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh" in text
+    assert "abc123def456" in text
+    assert "Report date" in text
 
 
 def test_report_does_not_claim_real_hitl_when_no_interrupts() -> None:
