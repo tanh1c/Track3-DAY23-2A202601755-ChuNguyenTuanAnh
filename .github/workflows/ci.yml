@@ -101,10 +101,10 @@ jobs:
           assert not Path("data/grading").exists(), "hidden grading data must not be committed"
 
           workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-          assert "workflow_dispatch:" in workflow
-          assert "pull_request:" not in workflow
-          assert "\n  push:" not in workflow
-          assert "schedule:" not in workflow
+          assert re.search(r"(?m)^  workflow_dispatch:\s*$", workflow)
+          for forbidden_trigger in ("pull_request", "push", "schedule"):
+              pattern = rf"(?m)^  {forbidden_trigger}:\s*$"
+              assert not re.search(pattern, workflow), forbidden_trigger
           assert "cancel-in-progress: true" in workflow
 
           token_patterns = (
