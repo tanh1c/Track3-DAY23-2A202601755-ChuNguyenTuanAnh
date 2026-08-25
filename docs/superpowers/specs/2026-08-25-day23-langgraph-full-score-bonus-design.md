@@ -1,8 +1,8 @@
 # Day 23 LangGraph Full-Score + Bonus Design
 
-**Date:** 2026-08-25  
-**Repository:** `tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh`  
-**Target branch:** `feat/day23-full-score-bonus`  
+**Date:** 2026-08-25
+**Repository:** `tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh`
+**Target branch:** `feat/day23-full-score-bonus`
 **Goal:** complete the Day 23 Track 3 LangGraph Agentic Orchestration lab to satisfy the official Codelab HTML contract first, then add high-value extensions with explicit evidence without destabilizing the core graph.
 
 ## 1. Source-of-truth hierarchy
