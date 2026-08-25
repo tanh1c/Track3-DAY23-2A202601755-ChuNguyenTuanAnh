@@ -2,6 +2,7 @@ from langgraph_agent_lab.bonus_evidence import (
     BonusEvidence,
     HitlEvidence,
     ParallelSendEvidence,
+    RecoveryEvidence,
     TimeTravelEvidence,
     UiEvidence,
 )
@@ -43,6 +44,16 @@ def _bonus() -> BonusEvidence:
             resume_success=True,
             rejection_verified=True,
             reviewer="ci-reviewer",
+        ),
+        recovery=RecoveryEvidence(
+            implemented=True,
+            verified=True,
+            writer_pid=101,
+            reader_pid=202,
+            distinct_processes=True,
+            same_thread_id=True,
+            persisted_finalized=True,
+            thread_id="recovery-thread",
         ),
         time_travel=TimeTravelEvidence(
             implemented=True,
@@ -89,6 +100,9 @@ def test_report_renders_all_official_extensions_from_evidence() -> None:
         "Limitations",
     ):
         assert heading in text
+    assert "timeout=20s" in text
+    assert "max_retries=0" in text
+    assert "writer PID 101 -> reader PID 202" in text
     assert "interrupt + same-thread" in text
     assert "replay + fork" in text
     assert "3 tasks -> 3 reducer results" in text

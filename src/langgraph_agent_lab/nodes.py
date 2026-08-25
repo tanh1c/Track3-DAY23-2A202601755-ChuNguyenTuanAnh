@@ -30,6 +30,9 @@ Ticket:
 {query}
 """
 
+JUDGE_TIMEOUT_SECONDS = 20.0
+JUDGE_MAX_RETRIES = 0
+
 
 def interrupt(payload: dict[str, object]) -> Any:
     """Lazy LangGraph interrupt wrapper so tests can inject reviewer decisions."""
@@ -156,7 +159,7 @@ def tool_node(state: AgentState) -> dict[str, Any]:
 
 
 def evaluate_node(state: AgentState) -> dict[str, Any]:
-    """Evaluate the latest result with one live judge call or a deterministic fallback."""
+    """Evaluate one result with an explicitly bounded live judge or deterministic fallback."""
     results = state.get("tool_results") or []
     latest = str(results[-1]) if results else "ERROR: no tool result available"
     heuristic = "needs_retry" if "ERROR" in latest.upper() else "success"
@@ -176,7 +179,11 @@ def evaluate_node(state: AgentState) -> dict[str, Any]:
     )
     try:
         decision = (
-            get_llm(temperature=0.0)
+            get_llm(
+                temperature=0.0,
+                timeout=JUDGE_TIMEOUT_SECONDS,
+                max_retries=JUDGE_MAX_RETRIES,
+            )
             .with_structured_output(EvaluationDecision)
             .invoke(prompt)
         )
@@ -191,6 +198,8 @@ def evaluate_node(state: AgentState) -> dict[str, Any]:
                     f"verdict={decision.verdict}",
                     mode="llm-as-judge",
                     reason=decision.reason,
+                    timeout_seconds=JUDGE_TIMEOUT_SECONDS,
+                    max_retries=JUDGE_MAX_RETRIES,
                 )
             ],
         }
@@ -206,6 +215,8 @@ def evaluate_node(state: AgentState) -> dict[str, Any]:
                     f"verdict={heuristic}",
                     mode="heuristic",
                     error=error,
+                    timeout_seconds=JUDGE_TIMEOUT_SECONDS,
+                    max_retries=JUDGE_MAX_RETRIES,
                 )
             ],
         }

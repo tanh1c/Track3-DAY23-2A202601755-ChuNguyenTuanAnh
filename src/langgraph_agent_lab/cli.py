@@ -16,6 +16,7 @@ from .graph import build_graph
 from .hitl import verify_hitl_round_trip
 from .metrics import MetricsReport, metric_from_state, summarize_metrics, write_metrics
 from .persistence import build_checkpointer
+from .recovery import verify_subprocess_recovery
 from .report import write_report
 from .scenarios import load_scenarios
 from .state import initial_state
@@ -189,20 +190,20 @@ def verify_bonus(
     metrics_path: Annotated[Path | None, typer.Option("--metrics")] = None,
     report_path: Annotated[Path | None, typer.Option("--report")] = None,
     llm_judge_verified: Annotated[bool, typer.Option("--llm-judge-verified")] = False,
-    durable_recovery_verified: Annotated[
-        bool, typer.Option("--durable-recovery-verified")
-    ] = False,
     mermaid_verified: Annotated[bool, typer.Option("--mermaid-verified")] = False,
 ) -> None:
     """Execute every offline bonus proof and write strict machine-readable evidence."""
     if (metrics_path is None) != (report_path is None):
         raise typer.BadParameter("--metrics and --report must be supplied together")
 
+    recovery_database = database.with_name(f"{database.stem}-recovery.sqlite")
+    recovery = verify_subprocess_recovery(recovery_database)
     evidence = BonusEvidence(
         llm_as_judge_verified=llm_judge_verified,
-        durable_recovery_verified=durable_recovery_verified,
+        durable_recovery_verified=recovery.verified,
         mermaid_export_verified=mermaid_verified,
         hitl=verify_hitl_round_trip(str(database)),
+        recovery=recovery,
         time_travel=verify_time_travel(str(database)),
         parallel_send=verify_parallel_send(),
         streamlit_ui=verify_ui_view_model(),
