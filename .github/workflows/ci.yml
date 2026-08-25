@@ -32,10 +32,6 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      OPENAI_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
-      GEMINI_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
-      ANTHROPIC_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
-      LLM_MODEL: ${{ inputs.mode == 'full-live' && vars.LLM_MODEL || '' }}
       LANGGRAPH_INTERRUPT: "false"
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +60,10 @@ jobs:
       - name: Verify selected provider secret exists
         if: inputs.mode == 'full-live'
         shell: bash
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
         run: |
           case "${{ inputs.provider }}" in
             openai) test -n "$OPENAI_API_KEY" ;;
@@ -77,7 +77,12 @@ jobs:
       - name: Typecheck
         run: make typecheck
 
-      - name: Tests
+      - name: Offline unit tests
+        env:
+          OPENAI_API_KEY: ""
+          GEMINI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          LLM_MODEL: ""
         run: make test
 
       - name: Submission hygiene
@@ -122,8 +127,24 @@ jobs:
           PY
           git diff --check origin/main...HEAD
 
+      - name: Live graph smoke
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
+        run: python -m pytest tests/test_graph_smoke.py -q
+
       - name: Run live scenarios
         if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
         run: make run-scenarios
 
       - name: Validate metrics schema
