@@ -1,10 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from typer.testing import CliRunner
+
 import langgraph_agent_lab.cli as cli
 from langgraph_agent_lab.metrics import MetricsReport, metric_from_state, summarize_metrics
 from langgraph_agent_lab.state import Route, Scenario
-from typer.testing import CliRunner
 
 
 runner = CliRunner()
@@ -92,7 +93,10 @@ def test_run_scenarios_records_measured_latency(tmp_path: Path, monkeypatch) -> 
 
 
 def test_export_graph_command_writes_compiled_mermaid(tmp_path: Path, monkeypatch) -> None:
-    mermaid = "graph TD; intake-->classify; classify-->approval; approval-->dead_letter; dead_letter-->finalize"
+    mermaid = (
+        "graph TD; intake-->classify; classify-->approval; "
+        "approval-->dead_letter; dead_letter-->finalize"
+    )
 
     class FakeView:
         def draw_mermaid(self) -> str:
