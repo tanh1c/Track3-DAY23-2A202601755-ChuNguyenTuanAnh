@@ -1,4 +1,4 @@
-"""Deterministic Markdown report generation from validated runtime metrics."""
+"""Deterministic Markdown report generation from validated runtime evidence."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import os
 from datetime import date
 from pathlib import Path
 
+from .bonus_evidence import BonusEvidence
 from .metrics import MetricsReport
 
 
@@ -22,8 +23,82 @@ def _commit_label() -> str:
     return os.getenv("GITHUB_SHA", "not recorded in this runtime")
 
 
-def render_report(metrics: MetricsReport) -> str:
-    """Render the complete evidence-based lab report from one MetricsReport."""
+def _bonus_rows(bonus: BonusEvidence) -> list[tuple[str, bool, bool, str]]:
+    """Translate typed bonus evidence into a report matrix without inventing claims."""
+    hitl = bonus.hitl
+    time_travel = bonus.time_travel
+    parallel = bonus.parallel_send
+    ui = bonus.streamlit_ui
+    return [
+        (
+            "LLM-as-judge",
+            True,
+            bonus.llm_as_judge_verified,
+            "structured evaluator exercised in live scenario gate"
+            if bonus.llm_as_judge_verified
+            else "live predecessor evidence not supplied",
+        ),
+        (
+            "Real HITL",
+            hitl.implemented,
+            hitl.verified,
+            "interrupt + same-thread Command(resume) + rejection path"
+            if hitl.verified
+            else (
+                f"interrupt={_yes_no(hitl.interrupt_observed)}, "
+                f"same-thread={_yes_no(hitl.same_thread_id)}, "
+                f"rejection={_yes_no(hitl.rejection_verified)}"
+            ),
+        ),
+        (
+            "SQLite recovery",
+            True,
+            bonus.durable_recovery_verified,
+            "fresh saver read completed stable thread"
+            if bonus.durable_recovery_verified
+            else "durable recovery predecessor evidence not supplied",
+        ),
+        (
+            "Time travel",
+            time_travel.implemented,
+            time_travel.verified,
+            "replay + fork + original history preserved"
+            if time_travel.verified
+            else (
+                f"replay={_yes_no(time_travel.replay_verified)}, "
+                f"fork={_yes_no(time_travel.fork_verified)}"
+            ),
+        ),
+        (
+            "Parallel Send",
+            parallel.implemented,
+            parallel.verified,
+            f"{parallel.task_count} tasks -> {parallel.result_count} reducer results using Send",
+        ),
+        (
+            "Streamlit UI",
+            ui.implemented,
+            ui.verified,
+            "view-model + secret-safety smoke"
+            if ui.verified
+            else (
+                f"view-model={_yes_no(ui.view_model_verified)}, "
+                f"secret-safe={_yes_no(ui.secret_safe)}"
+            ),
+        ),
+        (
+            "Mermaid export",
+            True,
+            bonus.mermaid_export_verified,
+            "compiled eleven-node core graph"
+            if bonus.mermaid_export_verified
+            else "compiled graph predecessor evidence not supplied",
+        ),
+    ]
+
+
+def render_report(metrics: MetricsReport, bonus: BonusEvidence | None = None) -> str:
+    """Render the complete evidence-based lab report from validated runtime objects."""
     state_history_row = (
         "| `messages`, `tool_results`, `errors`, `events` | append reducer | "
         "ordered audit/history |"
@@ -41,7 +116,7 @@ def render_report(metrics: MetricsReport) -> str:
         f"- Repository: `{REPOSITORY}`",
         f"- Commit: `{_commit_label()}`",
         f"- Report date: {date.today().isoformat()}",
-        "- Runtime numbers below are rendered from the validated metrics object, not retyped.",
+        "- Runtime numbers below are rendered from validated evidence objects, not retyped.",
         "",
         "## Architecture",
         "",
@@ -50,6 +125,8 @@ def render_report(metrics: MetricsReport) -> str:
         "`dead_letter`, and `finalize`. Four routing functions choose conditional edges.",
         "Every terminal path reaches `finalize` before `END`. The error path enters `retry` "
         "before a tool call, and only the retry node increments the bounded attempt counter.",
+        "Bonus demonstrations are isolated helpers or separate graphs and do not modify this "
+        "required eleven-node topology.",
         "",
         "## State Schema",
         "",
@@ -135,16 +212,33 @@ def render_report(metrics: MetricsReport) -> str:
     )
     if metrics.total_interrupts > 0:
         lines.append(
-            f"- Real HITL: {metrics.total_interrupts} real interrupt event(s) were observed in "
-            "this run."
+            f"- Core scenarios observed {metrics.total_interrupts} real interrupt event(s)."
         )
     else:
         lines.append(
-            "- Real HITL is feature-gated for interactive runs; no real HITL interrupt was "
-            "observed in this run."
+            "- The seven core scenarios run non-interactively; no real HITL interrupt was "
+            "observed in that core scenario batch."
         )
+
+    if bonus is not None:
+        lines.extend(
+            [
+                "",
+                "### Official extension matrix",
+                "",
+                "| Extension | Implemented | Verified | Evidence |",
+                "|---|---:|---:|---|",
+            ]
+        )
+        for name, implemented, verified, evidence_text in _bonus_rows(bonus):
+            lines.append(
+                f"| {name} | {_yes_no(implemented)} | {_yes_no(verified)} | "
+                f"{evidence_text} |"
+            )
+
     lines.extend(
         [
+            "",
             "- Mermaid graph export is derived from the compiled graph rather than a hand-written "
             "diagram.",
             "",
@@ -159,8 +253,12 @@ def render_report(metrics: MetricsReport) -> str:
     return "\n".join(lines)
 
 
-def write_report(metrics: MetricsReport, output_path: str | Path) -> None:
+def write_report(
+    metrics: MetricsReport,
+    output_path: str | Path,
+    bonus: BonusEvidence | None = None,
+) -> None:
     """Write the rendered report to a UTF-8 Markdown file."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_report(metrics), encoding="utf-8")
+    path.write_text(render_report(metrics, bonus=bonus), encoding="utf-8")
