@@ -51,6 +51,20 @@ def _run_worker(mode: str, database: Path, thread_id: str) -> dict[str, object]:
     return payload
 
 
+def _coerce_pid(value: object) -> int:
+    """Convert the JSON PID field only when its runtime type is safe to parse."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+    return 0
+
+
 def verify_subprocess_recovery(database: str | Path) -> RecoveryEvidence:
     """Write in one Python process, exit, then recover in a distinct process."""
     path = Path(database)
@@ -60,8 +74,8 @@ def verify_subprocess_recovery(database: str | Path) -> RecoveryEvidence:
     try:
         writer = _run_worker("write", path, thread_id)
         reader = _run_worker("read", path, thread_id)
-        writer_pid = int(writer.get("pid", 0))
-        reader_pid = int(reader.get("pid", 0))
+        writer_pid = _coerce_pid(writer.get("pid", 0))
+        reader_pid = _coerce_pid(reader.get("pid", 0))
         same_thread_id = (
             str(writer.get("thread_id", ""))
             == str(reader.get("thread_id", ""))
