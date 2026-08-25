@@ -1,5 +1,5 @@
-from langgraph_agent_lab.graph import build_graph
 import langgraph_agent_lab.nodes as nodes
+from langgraph_agent_lab.graph import build_graph
 
 
 REQUIRED_NODES = {
