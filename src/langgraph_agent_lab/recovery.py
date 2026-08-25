@@ -82,5 +82,5 @@ def verify_subprocess_recovery(database: str | Path) -> RecoveryEvidence:
             persisted_finalized=persisted_finalized,
             thread_id=thread_id,
         )
-    except (OSError, ValueError, json.JSONDecodeError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         return RecoveryEvidence(implemented=True, thread_id=thread_id)
