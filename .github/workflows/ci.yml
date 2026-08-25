@@ -137,6 +137,29 @@ jobs:
           LLM_JUDGE: "true"
         run: python -m pytest tests/test_graph_smoke.py -q
 
+      - name: Verify live LLM-as-judge
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
+        run: |
+          python - <<'PY'
+          from langgraph_agent_lab.nodes import evaluate_node
+
+          result = evaluate_node(
+              {"tool_results": ["SUCCESS: lookup completed with complete evidence"]}
+          )
+          assert result["evaluation_result"] == "success", result
+          events = result.get("events", [])
+          assert events, result
+          metadata = events[-1].get("metadata", {})
+          assert metadata.get("mode") == "llm-as-judge", metadata
+          print("live llm-as-judge: ok")
+          PY
+
       - name: Run live scenarios
         if: inputs.mode == 'full-live'
         env:
@@ -243,6 +266,7 @@ jobs:
               "Parallel Send", "Streamlit UI", "Mermaid export",
           ):
               assert extension in report, extension
+          assert "streamlit run src/langgraph_agent_lab/ui.py" in report
           assert "Chu Nguyen Tuan Anh" in report
           assert "Commit:" in report
           print("semantic evidence: ok")
