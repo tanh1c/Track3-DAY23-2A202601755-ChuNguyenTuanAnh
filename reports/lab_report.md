@@ -5,7 +5,7 @@
 - Name: Chu Nguyễn Tuấn Anh
 - MSSV: `2A202601755`
 - Repository: `tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh`
-- Commit: `35ede0e6051f00de8043be2349069ea77c0da83c`
+- Commit: `cef047bfcf9341e18b8f199b9f09148f243ba98e`
 - Report date: 2026-08-25
 - Runtime numbers below are rendered from validated evidence objects, not retyped.
 
@@ -42,13 +42,13 @@ Bonus demonstrations are isolated helpers or separate graphs and do not modify t
 
 | Scenario | Expected route | Actual route | Success | Nodes | Retries | Interrupts | Approval observed | Latency ms |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| S01_simple | simple | simple | yes | 4 | 0 | 0 | no | 2758 |
-| S02_tool | tool | tool | yes | 6 | 0 | 0 | no | 2290 |
-| S03_missing | missing_info | missing_info | yes | 4 | 0 | 0 | no | 786 |
-| S04_risky | risky | risky | yes | 8 | 0 | 0 | yes | 1725 |
-| S05_error | error | error | yes | 11 | 3 | 0 | no | 2195 |
-| S06_delete | risky | risky | yes | 8 | 0 | 0 | yes | 2023 |
-| S07_dead_letter | error | error | yes | 5 | 1 | 0 | no | 805 |
+| S01_simple | simple | simple | yes | 4 | 0 | 0 | no | 3235 |
+| S02_tool | tool | tool | yes | 6 | 0 | 0 | no | 2400 |
+| S03_missing | missing_info | missing_info | yes | 4 | 0 | 0 | no | 817 |
+| S04_risky | risky | risky | yes | 8 | 0 | 0 | yes | 2443 |
+| S05_error | error | error | yes | 11 | 3 | 0 | no | 2190 |
+| S06_delete | risky | risky | yes | 8 | 0 | 0 | yes | 2139 |
+| S07_dead_letter | error | error | yes | 5 | 1 | 0 | no | 671 |
 
 ## Failure Analysis
 
@@ -63,22 +63,22 @@ A risky request first creates `proposed_action`; it does not execute a side effe
 ## Persistence and Recovery
 
 - `resume_success`: `true`.
-- Recovery evidence indicates a fresh SQLite-backed graph instance could read a previously completed thread by its stable `thread_id`.
+- Core recovery evidence indicates a fresh SQLite-backed graph instance could read a previously completed thread by its stable `thread_id`.
 
 ## Extension Work
 
-- LLM-as-judge: live provider runs use one structured evaluation call per tool result; provider/schema failures fall back deterministically without an internal retry loop.
-- SQLite persistence: durable checkpointer support uses WAL and stable thread IDs; state-history inspection is read-only.
+- LLM-as-judge: one structured verdict call has an explicit 20-second request timeout and zero provider retries; provider/schema/timeout failure falls back deterministically.
+- SQLite persistence: durable checkpointer support uses WAL and stable thread IDs; the bonus verifier proves survival across two distinct Python processes.
 - The seven core scenarios run non-interactively; no real HITL interrupt was observed in that core scenario batch.
 
 ### Official extension matrix
 
 | Extension | Baseline | Implementation | Verification | Verified | Evidence | Limitations |
 |---|---|---|---|---:|---|---|
-| LLM-as-judge | deterministic evaluator fallback | structured verdict with one bounded live judge call | live provider gate plus evaluator tests | yes | structured evaluator exercised in live verification | provider failure still falls back deterministically |
+| LLM-as-judge | deterministic evaluator fallback | structured verdict with reason, 20s timeout, fallback, and zero provider retries | live provider gate plus evaluator budget tests | yes | one bounded structured judge call; timeout=20s; max_retries=0 | provider/schema/timeout failure falls back deterministically |
 | Real HITL | mock approval in non-interactive core runs | real interrupt and Command(resume) helper | approve and reject round-trips on durable SQLite | yes | interrupt + same-thread resume + rejection path; reviewer=ci-reviewer | CI uses programmed reviewer decisions rather than a waiting human |
-| SQLite recovery | memory checkpointer available for lightweight tests | durable SQLite saver with stable thread IDs | fresh saver reads a previously completed thread | yes | resume_success from restart-style recovery proof | Postgres is intentionally not required by the SQLite/Postgres option |
-| Time travel | read-only state-history inspection | exact checkpoint replay and explicit fork | replay + fork + original history preservation checks | yes | replay + fork verified from checkpoint 1f1a0798-09b7-6198-8001-94a413bc766e | verification uses a deterministic fixture; CLI supports persisted core threads |
+| SQLite recovery | fresh saver recovery in the core scenario runner | writer subprocess exits before a distinct reader subprocess loads the checkpoint | two Python processes use one SQLite DB and the same stable thread_id | yes | writer PID 2687 -> reader PID 2696; thread=subprocess-recovery-a12754b250124bb58d1339c63c79ffde; finalized=yes | SQLite path is proven; Postgres is not exercised |
+| Time travel | read-only state-history inspection | exact checkpoint replay and explicit fork | replay + fork + original history preservation checks | yes | replay + fork verified from checkpoint 1f1a084c-8479-6502-8001-2fad0b8fb5f5 | verification uses a deterministic fixture; CLI supports persisted core threads |
 | Parallel Send | single-path required support graph | separate map-reduce graph using LangGraph Send | actual Send objects plus reducer aggregation | yes | 3 tasks -> 3 reducer results using Send | kept separate so the required eleven-node graph is unchanged |
 | Streamlit UI | CLI/report evidence only | optional presentation layer over the existing state contract | import, view-model, and secret-safety smoke | yes | launch: `streamlit run src/langgraph_agent_lab/ui.py` | presentation smoke, not browser E2E |
 | Mermaid export | target topology documented in the lab | export generated from the compiled core graph | semantic gate checks all eleven required node names | yes | compiled eleven-node core graph exported to outputs/graph.mmd | diagram evidence does not replace runtime graph tests |
@@ -87,4 +87,4 @@ A risky request first creates `proposed_action`; it does not execute a side effe
 
 ## Improvement Plan
 
-The next production priority is replacing the deterministic mock tool with idempotent provider adapters that have explicit timeout/retry budgets, while keeping the current approval boundary and checkpoint/audit contracts unchanged.
+The next production priority is replacing the deterministic mock tool with idempotent provider adapters while keeping the current bounded LLM judge, approval boundary, persistence, and checkpoint/audit contracts unchanged.
