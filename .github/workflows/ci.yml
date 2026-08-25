@@ -32,19 +32,23 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     env:
-      OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
-      GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
-      ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
-      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      OPENAI_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+      GEMINI_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+      ANTHROPIC_API_KEY: ${{ inputs.mode == 'full-live' && inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+      LLM_MODEL: ${{ inputs.mode == 'full-live' && vars.LLM_MODEL || '' }}
+      LANGGRAPH_INTERRUPT: "false"
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
+
       - name: Install static dependencies
         if: inputs.mode == 'static'
         run: python -m pip install -e '.[dev,sqlite]'
+
       - name: Install live dependencies
         if: inputs.mode == 'full-live'
         shell: bash
@@ -54,9 +58,7 @@ jobs:
             google) python -m pip install -e '.[dev,sqlite,google]' ;;
             anthropic) python -m pip install -e '.[dev,sqlite,anthropic]' ;;
           esac
-      - run: make lint
-      - run: make typecheck
-      - run: make test
+
       - name: Verify selected provider secret exists
         if: inputs.mode == 'full-live'
         shell: bash
@@ -66,9 +68,72 @@ jobs:
             google) test -n "$GEMINI_API_KEY" ;;
             anthropic) test -n "$ANTHROPIC_API_KEY" ;;
           esac
+
+      - name: Lint
+        run: make lint
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Tests
+        run: make test
+
       - name: Run live scenarios
         if: inputs.mode == 'full-live'
         run: make run-scenarios
-      - name: Validate metrics
+
+      - name: Validate metrics schema
         if: inputs.mode == 'full-live'
         run: make grade-local
+
+      - name: Export compiled Mermaid graph
+        if: inputs.mode == 'full-live'
+        run: python -m langgraph_agent_lab.cli export-graph --output outputs/graph.mmd
+
+      - name: Validate semantic evidence
+        if: inputs.mode == 'full-live'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("outputs/metrics.json").read_text(encoding="utf-8"))
+          assert payload["total_scenarios"] >= 7, payload["total_scenarios"]
+          assert payload["success_rate"] == 1.0, payload["success_rate"]
+          assert payload["resume_success"] is True, payload["resume_success"]
+          scenarios = payload["scenario_metrics"]
+          assert any(item["retry_count"] > 0 for item in scenarios)
+          assert any(
+              item["approval_required"] and item["approval_observed"]
+              for item in scenarios
+          )
+          assert all(item["latency_ms"] > 0 for item in scenarios)
+
+          graph = Path("outputs/graph.mmd").read_text(encoding="utf-8")
+          for node in (
+              "intake", "classify", "tool", "evaluate", "answer", "clarify",
+              "risky_action", "approval", "retry", "dead_letter", "finalize",
+          ):
+              assert node in graph, node
+
+          report = Path("reports/lab_report.md").read_text(encoding="utf-8")
+          for section in (
+              "Architecture", "State Schema", "Scenario Results", "Failure Analysis",
+              "Persistence and Recovery", "Extension Work", "Improvement Plan",
+          ):
+              assert section in report, section
+          print("semantic evidence: ok")
+          PY
+
+      - name: Upload grading evidence
+        if: always() && inputs.mode == 'full-live'
+        uses: actions/upload-artifact@v4
+        with:
+          name: day23-evidence-${{ github.run_number }}
+          path: |
+            outputs/metrics.json
+            outputs/graph.mmd
+            reports/lab_report.md
+          if-no-files-found: warn
+          retention-days: 3
