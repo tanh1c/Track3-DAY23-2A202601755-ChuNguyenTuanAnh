@@ -179,6 +179,8 @@ def verify_bonus(
         "outputs/bonus-checkpoints.sqlite"
     ),
     output: Annotated[Path, typer.Option("--output")] = Path("outputs/bonus_evidence.json"),
+    metrics_path: Annotated[Path | None, typer.Option("--metrics")] = None,
+    report_path: Annotated[Path | None, typer.Option("--report")] = None,
     llm_judge_verified: Annotated[bool, typer.Option("--llm-judge-verified")] = False,
     durable_recovery_verified: Annotated[
         bool, typer.Option("--durable-recovery-verified")
@@ -186,6 +188,9 @@ def verify_bonus(
     mermaid_verified: Annotated[bool, typer.Option("--mermaid-verified")] = False,
 ) -> None:
     """Execute every offline bonus proof and write strict machine-readable evidence."""
+    if (metrics_path is None) != (report_path is None):
+        raise typer.BadParameter("--metrics and --report must be supplied together")
+
     evidence = BonusEvidence(
         llm_as_judge_verified=llm_judge_verified,
         durable_recovery_verified=durable_recovery_verified,
@@ -197,6 +202,12 @@ def verify_bonus(
     )
     write_bonus_evidence(evidence, output)
     typer.echo(f"Wrote bonus evidence to {output}")
+
+    if metrics_path is not None and report_path is not None:
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        metrics = MetricsReport.model_validate(payload)
+        write_report(metrics, report_path, bonus=evidence)
+        typer.echo(f"Refreshed report at {report_path}")
 
 
 if __name__ == "__main__":
