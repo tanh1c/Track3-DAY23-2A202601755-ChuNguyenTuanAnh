@@ -52,9 +52,9 @@ jobs:
         shell: bash
         run: |
           case "${{ inputs.provider }}" in
-            openai) python -m pip install -e '.[dev,sqlite,openai]' ;;
-            google) python -m pip install -e '.[dev,sqlite,google]' ;;
-            anthropic) python -m pip install -e '.[dev,sqlite,anthropic]' ;;
+            openai) python -m pip install -e '.[dev,sqlite,ui,openai]' ;;
+            google) python -m pip install -e '.[dev,sqlite,ui,google]' ;;
+            anthropic) python -m pip install -e '.[dev,sqlite,ui,anthropic]' ;;
           esac
 
       - name: Verify selected provider secret exists
@@ -155,6 +155,28 @@ jobs:
         if: inputs.mode == 'full-live'
         run: python -m langgraph_agent_lab.cli export-graph --output outputs/graph.mmd
 
+      - name: Verify Streamlit import
+        if: inputs.mode == 'full-live'
+        run: python -c "import streamlit; import langgraph_agent_lab.ui"
+
+      - name: Verify full bonus extensions
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ""
+          GEMINI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          LLM_MODEL: ""
+          LANGGRAPH_INTERRUPT: "false"
+        run: |
+          python -m langgraph_agent_lab.cli verify-bonus \
+            --database outputs/bonus-checkpoints.sqlite \
+            --output outputs/bonus_evidence.json \
+            --metrics outputs/metrics.json \
+            --report reports/lab_report.md \
+            --llm-judge-verified \
+            --durable-recovery-verified \
+            --mermaid-verified
+
       - name: Validate semantic evidence
         if: inputs.mode == 'full-live'
         shell: bash
@@ -182,6 +204,33 @@ jobs:
           ):
               assert node in graph, node
 
+          bonus = json.loads(
+              Path("outputs/bonus_evidence.json").read_text(encoding="utf-8")
+          )
+          assert bonus["llm_as_judge_verified"] is True
+          assert bonus["durable_recovery_verified"] is True
+          assert bonus["mermaid_export_verified"] is True
+          assert bonus["hitl"]["verified"] is True
+          assert bonus["hitl"]["interrupt_observed"] is True
+          assert bonus["hitl"]["same_thread_id"] is True
+          assert bonus["hitl"]["resume_success"] is True
+          assert bonus["hitl"]["rejection_verified"] is True
+          assert bonus["time_travel"]["verified"] is True
+          assert bonus["time_travel"]["replay_verified"] is True
+          assert bonus["time_travel"]["fork_verified"] is True
+          assert bonus["time_travel"]["original_history_preserved"] is True
+          assert bonus["parallel_send"]["verified"] is True
+          assert bonus["parallel_send"]["used_send"] is True
+          assert bonus["parallel_send"]["task_count"] > 1
+          assert (
+              bonus["parallel_send"]["task_count"]
+              == bonus["parallel_send"]["result_count"]
+          )
+          assert bonus["parallel_send"]["aggregate_deterministic"] is True
+          assert bonus["streamlit_ui"]["verified"] is True
+          assert bonus["streamlit_ui"]["view_model_verified"] is True
+          assert bonus["streamlit_ui"]["secret_safe"] is True
+
           report = Path("reports/lab_report.md").read_text(encoding="utf-8")
           for section in (
               "Student", "Architecture", "State Schema", "Scenario Results",
@@ -189,6 +238,11 @@ jobs:
               "Improvement Plan",
           ):
               assert section in report, section
+          for extension in (
+              "LLM-as-judge", "Real HITL", "SQLite recovery", "Time travel",
+              "Parallel Send", "Streamlit UI", "Mermaid export",
+          ):
+              assert extension in report, extension
           assert "Chu Nguyen Tuan Anh" in report
           assert "Commit:" in report
           print("semantic evidence: ok")
@@ -202,6 +256,7 @@ jobs:
           path: |
             outputs/metrics.json
             outputs/graph.mmd
+            outputs/bonus_evidence.json
             reports/lab_report.md
           if-no-files-found: warn
           retention-days: 3
