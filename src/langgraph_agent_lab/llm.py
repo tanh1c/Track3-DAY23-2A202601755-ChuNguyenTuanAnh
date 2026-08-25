@@ -23,6 +23,11 @@ def configured_provider() -> str | None:
     return None
 
 
+def _resolve_model(explicit: str | None, default: str) -> str:
+    """Resolve an explicit model, environment override, or provider default."""
+    return explicit or os.getenv("LLM_MODEL") or default
+
+
 def get_llm(model: str | None = None, temperature: float = 0.0) -> Any:
     """Create an LLM client from environment configuration.
 
@@ -37,7 +42,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0) -> Any:
         except ImportError as exc:
             raise RuntimeError("Install: pip install langchain-google-genai") from exc
         return ChatGoogleGenerativeAI(
-            model=model or os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+            model=_resolve_model(model, "gemini-2.5-flash"),
             google_api_key=os.getenv("GEMINI_API_KEY"),
             temperature=temperature,
         )
@@ -48,7 +53,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0) -> Any:
         except ImportError as exc:
             raise RuntimeError("Install: pip install langchain-openai") from exc
         return ChatOpenAI(
-            model=model or os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            model=_resolve_model(model, "gpt-4o-mini"),
             temperature=temperature,
         )
 
@@ -58,7 +63,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0) -> Any:
         except ImportError as exc:
             raise RuntimeError("Install: pip install langchain-anthropic") from exc
         return ChatAnthropic(
-            model=model or os.getenv("LLM_MODEL", "claude-sonnet-4-20250514"),
+            model=_resolve_model(model, "claude-sonnet-4-20250514"),
             temperature=temperature,
         )
 
