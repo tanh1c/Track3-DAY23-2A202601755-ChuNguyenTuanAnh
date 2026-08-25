@@ -1,5 +1,6 @@
 from copy import deepcopy
 
+import langgraph_agent_lab.nodes as nodes
 from langgraph_agent_lab.nodes import (
     approval_node,
     ask_clarification_node,
@@ -51,6 +52,26 @@ def test_mock_approval_is_non_interactive_by_default(monkeypatch) -> None:
     update = approval_node({"proposed_action": "refund order"})
     assert update["approval"]["approved"] is True
     assert update["approval"]["reviewer"] == "mock-reviewer"
+
+
+def test_real_hitl_mode_uses_patchable_interrupt(monkeypatch) -> None:
+    monkeypatch.setenv("LANGGRAPH_INTERRUPT", "true")
+    observed: dict[str, object] = {}
+
+    def fake_interrupt(payload: dict[str, object]) -> dict[str, object]:
+        observed.update(payload)
+        return {
+            "approved": False,
+            "reviewer": "human",
+            "comment": "choose another action",
+        }
+
+    monkeypatch.setattr(nodes, "interrupt", fake_interrupt, raising=False)
+    update = approval_node({"proposed_action": "delete account"})
+    assert observed["proposed_action"] == "delete account"
+    assert update["approval"]["approved"] is False
+    assert update["events"][0]["event_type"] == "resumed"
+    assert update["events"][0]["metadata"]["real_interrupt"] is True
 
 
 def test_evaluator_heuristic_detects_error_without_api_key(monkeypatch) -> None:
