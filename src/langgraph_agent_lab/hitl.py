@@ -13,7 +13,12 @@ from .graph import build_graph
 from .persistence import build_checkpointer
 from .state import Route, Scenario, initial_state
 
-_PROVIDER_VARS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "LLM_MODEL")
+_PROVIDER_VARS = (
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "LLM_MODEL",
+)
 
 
 def _event_nodes(state: dict[str, Any]) -> list[str]:
@@ -123,7 +128,9 @@ def verify_hitl_round_trip(
         bool(dict(event.get("metadata", {}) or {}).get("real_interrupt"))
         for event in approval_events
     )
-    approved_order = all(node in approved_nodes for node in ("risky_action", "approval", "tool"))
+    approved_order = all(
+        node in approved_nodes for node in ("risky_action", "approval", "tool")
+    )
     if approved_order:
         approved_order = (
             approved_nodes.index("risky_action")
