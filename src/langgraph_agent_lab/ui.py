@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import os
 
-from .bonus_evidence import UiEvidence
-from .state import AgentState
+from langgraph_agent_lab.bonus_evidence import UiEvidence
+from langgraph_agent_lab.state import AgentState
 
 _PRESENTATION_KEYS = (
     "thread_id",
