@@ -7,6 +7,7 @@ import langgraph_agent_lab.cli as cli
 from langgraph_agent_lab.bonus_evidence import (
     HitlEvidence,
     ParallelSendEvidence,
+    RecoveryEvidence,
     TimeTravelEvidence,
     UiEvidence,
 )
@@ -27,6 +28,20 @@ def test_verify_bonus_writes_runtime_evidence(tmp_path: Path, monkeypatch) -> No
             resume_success=True,
             rejection_verified=True,
             reviewer="ci-reviewer",
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "verify_subprocess_recovery",
+        lambda _db: RecoveryEvidence(
+            implemented=True,
+            verified=True,
+            writer_pid=101,
+            reader_pid=202,
+            distinct_processes=True,
+            same_thread_id=True,
+            persisted_finalized=True,
+            thread_id="recovery-thread",
         ),
     )
     monkeypatch.setattr(
@@ -74,14 +89,14 @@ def test_verify_bonus_writes_runtime_evidence(tmp_path: Path, monkeypatch) -> No
             "--output",
             str(output),
             "--llm-judge-verified",
-            "--durable-recovery-verified",
             "--mermaid-verified",
         ],
     )
     assert result.exit_code == 0
     payload = output.read_text(encoding="utf-8")
     assert '"llm_as_judge_verified": true' in payload
-    assert '"verified": true' in payload
+    assert '"durable_recovery_verified": true' in payload
+    assert '"distinct_processes": true' in payload
 
 
 def test_time_travel_command_replays_exact_checkpoint(monkeypatch) -> None:
