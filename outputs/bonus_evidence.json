@@ -1,0 +1,36 @@
+{
+  "llm_as_judge_verified": true,
+  "durable_recovery_verified": true,
+  "mermaid_export_verified": true,
+  "hitl": {
+    "implemented": true,
+    "verified": true,
+    "interrupt_observed": true,
+    "same_thread_id": true,
+    "resume_success": true,
+    "rejection_verified": true,
+    "reviewer": "ci-reviewer"
+  },
+  "time_travel": {
+    "implemented": true,
+    "verified": true,
+    "replay_verified": true,
+    "fork_verified": true,
+    "original_history_preserved": true,
+    "checkpoint_id": "1f1a0798-09b7-6198-8001-94a413bc766e"
+  },
+  "parallel_send": {
+    "implemented": true,
+    "verified": true,
+    "used_send": true,
+    "task_count": 3,
+    "result_count": 3,
+    "aggregate_deterministic": true
+  },
+  "streamlit_ui": {
+    "implemented": true,
+    "verified": true,
+    "view_model_verified": true,
+    "secret_safe": true
+  }
+}
