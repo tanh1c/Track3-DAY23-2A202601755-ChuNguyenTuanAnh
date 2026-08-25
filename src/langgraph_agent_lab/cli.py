@@ -10,12 +10,17 @@ from typing import Annotated, Any
 import typer
 import yaml
 
+from .bonus_evidence import BonusEvidence, write_bonus_evidence
+from .bonus_parallel import verify_parallel_send
 from .graph import build_graph
+from .hitl import verify_hitl_round_trip
 from .metrics import MetricsReport, metric_from_state, summarize_metrics, write_metrics
 from .persistence import build_checkpointer
 from .report import write_report
 from .scenarios import load_scenarios
 from .state import initial_state
+from .time_travel import find_checkpoint, fork_checkpoint, replay_checkpoint, verify_time_travel
+from .ui import verify_ui_view_model
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -34,6 +39,10 @@ def _verify_recovery(kind: str, database_url: str | None, thread_id: str | None)
         return bool(events) and any(event.get("node") == "finalize" for event in events)
     except Exception:
         return False
+
+
+def _finalized(state: dict[str, Any]) -> bool:
+    return any(event.get("node") == "finalize" for event in state.get("events", []) or [])
 
 
 @app.command("run-scenarios")
@@ -125,6 +134,69 @@ def state_history(
             f"{index}: checkpoint={checkpoint_id} route={route} "
             f"attempt={attempt} finalized={'yes' if finalized else 'no'}"
         )
+
+
+@app.command("time-travel")
+def time_travel(
+    database: Annotated[Path, typer.Option("--database")],
+    thread_id: Annotated[str, typer.Option("--thread-id")],
+    checkpoint_id: Annotated[str, typer.Option("--checkpoint-id")],
+    mode: Annotated[str, typer.Option("--mode")],
+    set_query: Annotated[str | None, typer.Option("--set-query")] = None,
+) -> None:
+    """Replay or fork from one exact persisted core-graph checkpoint."""
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in {"replay", "fork"}:
+        raise typer.BadParameter("--mode must be replay or fork")
+
+    graph = build_graph(checkpointer=build_checkpointer("sqlite", str(database)))
+    try:
+        checkpoint = find_checkpoint(graph, thread_id, checkpoint_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if normalized_mode == "replay":
+        result = replay_checkpoint(graph, checkpoint)
+    else:
+        if set_query is None or not set_query.strip():
+            raise typer.BadParameter("fork mode requires --set-query")
+        _fork_config, result = fork_checkpoint(
+            graph,
+            checkpoint,
+            {"query": set_query.strip()},
+        )
+
+    typer.echo(
+        f"checkpoint={checkpoint_id} mode={normalized_mode} "
+        f"route={result.get('route', 'unknown')} attempt={result.get('attempt', 0)} "
+        f"finalized={'yes' if _finalized(result) else 'no'}"
+    )
+
+
+@app.command("verify-bonus")
+def verify_bonus(
+    database: Annotated[Path, typer.Option("--database")] = Path(
+        "outputs/bonus-checkpoints.sqlite"
+    ),
+    output: Annotated[Path, typer.Option("--output")] = Path("outputs/bonus_evidence.json"),
+    llm_judge_verified: Annotated[bool, typer.Option("--llm-judge-verified")] = False,
+    durable_recovery_verified: Annotated[
+        bool, typer.Option("--durable-recovery-verified")
+    ] = False,
+    mermaid_verified: Annotated[bool, typer.Option("--mermaid-verified")] = False,
+) -> None:
+    """Execute every offline bonus proof and write strict machine-readable evidence."""
+    evidence = BonusEvidence(
+        llm_as_judge_verified=llm_judge_verified,
+        durable_recovery_verified=durable_recovery_verified,
+        mermaid_export_verified=mermaid_verified,
+        hitl=verify_hitl_round_trip(str(database)),
+        time_travel=verify_time_travel(str(database)),
+        parallel_send=verify_parallel_send(),
+        streamlit_ui=verify_ui_view_model(),
+    )
+    write_bonus_evidence(evidence, output)
+    typer.echo(f"Wrote bonus evidence to {output}")
 
 
 if __name__ == "__main__":
