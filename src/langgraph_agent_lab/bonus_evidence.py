@@ -17,6 +17,19 @@ class HitlEvidence(BaseModel):
     reviewer: str = ""
 
 
+class RecoveryEvidence(BaseModel):
+    """Proof that SQLite checkpoints survive a real Python process restart."""
+
+    implemented: bool = False
+    verified: bool = False
+    writer_pid: int = 0
+    reader_pid: int = 0
+    distinct_processes: bool = False
+    same_thread_id: bool = False
+    persisted_finalized: bool = False
+    thread_id: str = ""
+
+
 class TimeTravelEvidence(BaseModel):
     """Proof that checkpoint replay and fork semantics were exercised."""
 
@@ -55,6 +68,7 @@ class BonusEvidence(BaseModel):
     durable_recovery_verified: bool = False
     mermaid_export_verified: bool = False
     hitl: HitlEvidence = Field(default_factory=HitlEvidence)
+    recovery: RecoveryEvidence = Field(default_factory=RecoveryEvidence)
     time_travel: TimeTravelEvidence = Field(default_factory=TimeTravelEvidence)
     parallel_send: ParallelSendEvidence = Field(default_factory=ParallelSendEvidence)
     streamlit_ui: UiEvidence = Field(default_factory=UiEvidence)
@@ -72,6 +86,23 @@ def validate_bonus_evidence(evidence: BonusEvidence) -> None:
         and bool(hitl.reviewer.strip())
     ):
         raise ValueError("HITL verification is missing interrupt/resume evidence")
+
+    recovery = evidence.recovery
+    recovery_proven = (
+        recovery.implemented
+        and recovery.verified
+        and recovery.writer_pid > 0
+        and recovery.reader_pid > 0
+        and recovery.writer_pid != recovery.reader_pid
+        and recovery.distinct_processes
+        and recovery.same_thread_id
+        and recovery.persisted_finalized
+        and bool(recovery.thread_id.strip())
+    )
+    if recovery.verified and not recovery_proven:
+        raise ValueError("recovery verification is missing distinct-process proof")
+    if evidence.durable_recovery_verified and not recovery_proven:
+        raise ValueError("durable recovery claim requires subprocess restart evidence")
 
     time_travel = evidence.time_travel
     if time_travel.verified and not (
