@@ -49,7 +49,11 @@ def verify_ui_view_model() -> UiEvidence:
         "route": "risky",
         "risk_level": "high",
         "proposed_action": "refund order after approval",
-        "approval": {"approved": True, "reviewer": "ui-reviewer", "comment": "ok"},
+        "approval": {
+            "approved": True,
+            "reviewer": "ui-reviewer",
+            "comment": "ok",
+        },
         "final_answer": "completed",
         "events": [
             {
@@ -80,10 +84,18 @@ def main() -> None:
 
     st.set_page_config(page_title="Day 23 LangGraph Evidence", layout="wide")
     st.title("Day 23 LangGraph Evidence UI")
-    st.caption("Presentation-only view of the existing state contract; no provider secrets shown.")
+    st.caption(
+        "Presentation-only view of the existing state contract; "
+        "no provider secrets shown."
+    )
 
     query = st.text_input("Ticket", value="Please refund order 42")
-    route = st.selectbox("Route", ["simple", "tool", "missing_info", "risky", "error"])
+    route = str(
+        st.selectbox(
+            "Route",
+            ["simple", "tool", "missing_info", "risky", "error"],
+        )
+    )
     risk_level = "high" if route == "risky" else "low"
     proposed_action = st.text_input(
         "Proposed action",
