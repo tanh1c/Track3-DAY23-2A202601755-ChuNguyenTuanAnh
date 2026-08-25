@@ -14,6 +14,7 @@ dependencies = [
   "rich>=13.7",
   "typer>=0.12",
   "langgraph>=0.3.0",
+  "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,7 @@ openai = ["langchain-openai>=0.3.0"]
 anthropic = ["langchain-anthropic>=0.3.0"]
 sqlite = ["langgraph-checkpoint-sqlite>=2.0"]
 postgres = ["langgraph-checkpoint-postgres>=2.0"]
+ui = ["streamlit>=1.40"]
 
 [project.scripts]
 agent-lab = "langgraph_agent_lab.cli:app"
@@ -41,7 +43,23 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "ANN"]
-ignore = ["ANN101", "ANN102"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["langgraph_agent_lab"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "I001"]
+"tests/test_graph_smoke.py" = ["ANN", "I001", "E402", "E501"]
+"tests/test_metrics.py" = ["ANN", "I001", "E501"]
+"tests/test_routing.py" = ["ANN", "I001", "F401"]
+"src/langgraph_agent_lab/nodes.py" = ["I001"]
+"src/langgraph_agent_lab/report.py" = ["I001"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

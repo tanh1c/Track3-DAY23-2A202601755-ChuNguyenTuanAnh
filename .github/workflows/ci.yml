@@ -52,9 +52,9 @@ jobs:
         shell: bash
         run: |
           case "${{ inputs.provider }}" in
-            openai) python -m pip install -e '.[dev,sqlite,openai]' ;;
-            google) python -m pip install -e '.[dev,sqlite,google]' ;;
-            anthropic) python -m pip install -e '.[dev,sqlite,anthropic]' ;;
+            openai) python -m pip install -e '.[dev,sqlite,ui,openai]' ;;
+            google) python -m pip install -e '.[dev,sqlite,ui,google]' ;;
+            anthropic) python -m pip install -e '.[dev,sqlite,ui,anthropic]' ;;
           esac
 
       - name: Verify selected provider secret exists
@@ -101,10 +101,10 @@ jobs:
           assert not Path("data/grading").exists(), "hidden grading data must not be committed"
 
           workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-          assert "workflow_dispatch:" in workflow
-          assert "pull_request:" not in workflow
-          assert "\n  push:" not in workflow
-          assert "schedule:" not in workflow
+          assert re.search(r"(?m)^  workflow_dispatch:\s*$", workflow)
+          for forbidden_trigger in ("pull_request", "push", "schedule"):
+              pattern = rf"(?m)^  {forbidden_trigger}:\s*$"
+              assert not re.search(pattern, workflow), forbidden_trigger
           assert "cancel-in-progress: true" in workflow
 
           token_patterns = (
@@ -137,6 +137,29 @@ jobs:
           LLM_JUDGE: "true"
         run: python -m pytest tests/test_graph_smoke.py -q
 
+      - name: Verify live LLM-as-judge
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
+        run: |
+          python - <<'PY'
+          from langgraph_agent_lab.nodes import evaluate_node
+
+          result = evaluate_node(
+              {"tool_results": ["SUCCESS: lookup completed with complete evidence"]}
+          )
+          assert result["evaluation_result"] == "success", result
+          events = result.get("events", [])
+          assert events, result
+          metadata = events[-1].get("metadata", {})
+          assert metadata.get("mode") == "llm-as-judge", metadata
+          print("live llm-as-judge: ok")
+          PY
+
       - name: Run live scenarios
         if: inputs.mode == 'full-live'
         env:
@@ -154,6 +177,28 @@ jobs:
       - name: Export compiled Mermaid graph
         if: inputs.mode == 'full-live'
         run: python -m langgraph_agent_lab.cli export-graph --output outputs/graph.mmd
+
+      - name: Verify Streamlit import
+        if: inputs.mode == 'full-live'
+        run: python -c "import streamlit; import langgraph_agent_lab.ui"
+
+      - name: Verify full bonus extensions
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ""
+          GEMINI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          LLM_MODEL: ""
+          LANGGRAPH_INTERRUPT: "false"
+        run: |
+          python -m langgraph_agent_lab.cli verify-bonus \
+            --database outputs/bonus-checkpoints.sqlite \
+            --output outputs/bonus_evidence.json \
+            --metrics outputs/metrics.json \
+            --report reports/lab_report.md \
+            --llm-judge-verified \
+            --durable-recovery-verified \
+            --mermaid-verified
 
       - name: Validate semantic evidence
         if: inputs.mode == 'full-live'
@@ -182,6 +227,33 @@ jobs:
           ):
               assert node in graph, node
 
+          bonus = json.loads(
+              Path("outputs/bonus_evidence.json").read_text(encoding="utf-8")
+          )
+          assert bonus["llm_as_judge_verified"] is True
+          assert bonus["durable_recovery_verified"] is True
+          assert bonus["mermaid_export_verified"] is True
+          assert bonus["hitl"]["verified"] is True
+          assert bonus["hitl"]["interrupt_observed"] is True
+          assert bonus["hitl"]["same_thread_id"] is True
+          assert bonus["hitl"]["resume_success"] is True
+          assert bonus["hitl"]["rejection_verified"] is True
+          assert bonus["time_travel"]["verified"] is True
+          assert bonus["time_travel"]["replay_verified"] is True
+          assert bonus["time_travel"]["fork_verified"] is True
+          assert bonus["time_travel"]["original_history_preserved"] is True
+          assert bonus["parallel_send"]["verified"] is True
+          assert bonus["parallel_send"]["used_send"] is True
+          assert bonus["parallel_send"]["task_count"] > 1
+          assert (
+              bonus["parallel_send"]["task_count"]
+              == bonus["parallel_send"]["result_count"]
+          )
+          assert bonus["parallel_send"]["aggregate_deterministic"] is True
+          assert bonus["streamlit_ui"]["verified"] is True
+          assert bonus["streamlit_ui"]["view_model_verified"] is True
+          assert bonus["streamlit_ui"]["secret_safe"] is True
+
           report = Path("reports/lab_report.md").read_text(encoding="utf-8")
           for section in (
               "Student", "Architecture", "State Schema", "Scenario Results",
@@ -189,6 +261,12 @@ jobs:
               "Improvement Plan",
           ):
               assert section in report, section
+          for extension in (
+              "LLM-as-judge", "Real HITL", "SQLite recovery", "Time travel",
+              "Parallel Send", "Streamlit UI", "Mermaid export",
+          ):
+              assert extension in report, extension
+          assert "streamlit run src/langgraph_agent_lab/ui.py" in report
           assert "Chu Nguyen Tuan Anh" in report
           assert "Commit:" in report
           print("semantic evidence: ok")
@@ -202,6 +280,7 @@ jobs:
           path: |
             outputs/metrics.json
             outputs/graph.mmd
+            outputs/bonus_evidence.json
             reports/lab_report.md
           if-no-files-found: warn
           retention-days: 3

@@ -21,10 +21,13 @@ env/
 # Environment
 .env
 
-# Persistence
+# Persistence runtime artifacts
 checkpoints.db
 checkpoints.db-wal
 checkpoints.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # Testing
 .pytest_cache/
