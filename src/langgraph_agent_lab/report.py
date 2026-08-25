@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
 
 from .metrics import MetricsReport
 
 
+STUDENT_NAME = "Chu Nguyen Tuan Anh"
+REPOSITORY = "tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh"
+
+
 def _yes_no(value: bool) -> str:
     return "yes" if value else "no"
+
+
+def _commit_label() -> str:
+    """Use the CI commit when available without invoking Git from the renderer."""
+    return os.getenv("GITHUB_SHA", "not recorded in this runtime")
 
 
 def render_report(metrics: MetricsReport) -> str:
@@ -19,9 +29,11 @@ def render_report(metrics: MetricsReport) -> str:
         "",
         "## Student",
         "",
-        "- Repository: `tanh1c/Track3-DAY23-2A202601755-ChuNguyenTuanAnh`",
+        f"- Name: {STUDENT_NAME}",
+        f"- Repository: `{REPOSITORY}`",
+        f"- Commit: `{_commit_label()}`",
         f"- Report date: {date.today().isoformat()}",
-        "- Runtime numbers below are rendered from `outputs/metrics.json` data, not retyped.",
+        "- Runtime numbers below are rendered from the validated metrics object, not retyped.",
         "",
         "## Architecture",
         "",
