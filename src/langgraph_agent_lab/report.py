@@ -24,6 +24,14 @@ def _commit_label() -> str:
 
 def render_report(metrics: MetricsReport) -> str:
     """Render the complete evidence-based lab report from one MetricsReport."""
+    state_history_row = (
+        "| `messages`, `tool_results`, `errors`, `events` | append reducer | "
+        "ordered audit/history |"
+    )
+    scenario_header = (
+        "| Scenario | Expected route | Actual route | Success | Nodes | Retries | "
+        "Interrupts | Approval observed | Latency ms |"
+    )
     lines = [
         "# LangGraph Agentic Orchestration Lab Report",
         "",
@@ -47,7 +55,7 @@ def render_report(metrics: MetricsReport) -> str:
         "",
         "| Field group | Update semantics | Purpose |",
         "|---|---|---|",
-        "| `messages`, `tool_results`, `errors`, `events` | append reducer | ordered audit/history |",
+        state_history_row,
         "| `route`, `risk_level` | overwrite | current classified intent and risk |",
         "| `attempt`, `max_attempts` | overwrite | bounded retry state |",
         "| `evaluation_result` | overwrite | evaluate routing gate |",
@@ -68,7 +76,7 @@ def render_report(metrics: MetricsReport) -> str:
         "",
         "## Scenario Results",
         "",
-        "| Scenario | Expected route | Actual route | Success | Nodes | Retries | Interrupts | Approval observed | Latency ms |",
+        scenario_header,
         "|---|---|---|---:|---:|---:|---:|---:|---:|",
     ]
 
