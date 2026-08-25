@@ -141,5 +141,5 @@ def test_time_travel_command_rejects_unknown_checkpoint(monkeypatch) -> None:
             "replay",
         ],
     )
-    assert result.exit_code != 0
-    assert "Unknown checkpoint" in str(result.exception)
+    assert result.exit_code == 2
+    assert "Unknown checkpoint: missing" in result.output
