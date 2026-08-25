@@ -90,5 +90,42 @@ def validate_metrics(metrics: Annotated[Path, typer.Option("--metrics")]) -> Non
     typer.echo(f"Metrics valid. success_rate={report.success_rate:.2%}")
 
 
+@app.command("export-graph")
+def export_graph(output: Annotated[Path, typer.Option("--output")]) -> None:
+    """Export Mermaid from the actual compiled graph."""
+    graph = build_graph(checkpointer=None)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(graph.get_graph().draw_mermaid(), encoding="utf-8")
+    typer.echo(f"Wrote graph Mermaid to {output}")
+
+
+@app.command("state-history")
+def state_history(
+    database: Annotated[Path, typer.Option("--database")],
+    thread_id: Annotated[str, typer.Option("--thread-id")],
+) -> None:
+    """Print compact, read-only checkpoint facts for one SQLite-backed thread."""
+    graph = build_graph(checkpointer=build_checkpointer("sqlite", str(database)))
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshots = list(graph.get_state_history(config))
+    if not snapshots:
+        typer.echo("No checkpoints found for that thread.")
+        return
+
+    for index, snapshot in enumerate(snapshots):
+        snapshot_config = dict(snapshot.config or {})
+        configurable = dict(snapshot_config.get("configurable", {}) or {})
+        checkpoint_id = configurable.get("checkpoint_id", "unknown")
+        values = dict(snapshot.values or {})
+        events = list(values.get("events", []) or [])
+        finalized = any(event.get("node") == "finalize" for event in events)
+        route = values.get("route", "unknown")
+        attempt = values.get("attempt", 0)
+        typer.echo(
+            f"{index}: checkpoint={checkpoint_id} route={route} "
+            f"attempt={attempt} finalized={'yes' if finalized else 'no'}"
+        )
+
+
 if __name__ == "__main__":
     app()
