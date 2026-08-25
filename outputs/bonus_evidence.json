@@ -11,13 +11,23 @@
     "rejection_verified": true,
     "reviewer": "ci-reviewer"
   },
+  "recovery": {
+    "implemented": true,
+    "verified": true,
+    "writer_pid": 2687,
+    "reader_pid": 2696,
+    "distinct_processes": true,
+    "same_thread_id": true,
+    "persisted_finalized": true,
+    "thread_id": "subprocess-recovery-a12754b250124bb58d1339c63c79ffde"
+  },
   "time_travel": {
     "implemented": true,
     "verified": true,
     "replay_verified": true,
     "fork_verified": true,
     "original_history_preserved": true,
-    "checkpoint_id": "1f1a0798-09b7-6198-8001-94a413bc766e"
+    "checkpoint_id": "1f1a084c-8479-6502-8001-2fad0b8fb5f5"
   },
   "parallel_send": {
     "implemented": true,
