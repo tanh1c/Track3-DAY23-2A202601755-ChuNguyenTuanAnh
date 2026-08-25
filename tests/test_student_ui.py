@@ -17,9 +17,12 @@ REQUIRED_KEYS = {
 
 
 def test_view_model_contains_only_presentation_fields(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-secret-value-not-for-display")
-    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test-secret-value-not-for-display")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-secret-value-not-for-display")
+    openai_sentinel = "openai-secret-sentinel-123456789"
+    gemini_sentinel = "gemini-secret-sentinel-123456789"
+    anthropic_sentinel = "anthropic-secret-sentinel-123456789"
+    monkeypatch.setenv("OPENAI_API_KEY", openai_sentinel)
+    monkeypatch.setenv("GEMINI_API_KEY", gemini_sentinel)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", anthropic_sentinel)
     state = {
         "thread_id": "thread-ui",
         "query": "refund order",
@@ -28,19 +31,21 @@ def test_view_model_contains_only_presentation_fields(monkeypatch) -> None:
         "proposed_action": "refund order",
         "approval": {"approved": True, "reviewer": "alice", "comment": "ok"},
         "final_answer": "completed",
-        "events": [{"node": "finalize", "event_type": "completed", "message": "done"}],
+        "events": [
+            {"node": "finalize", "event_type": "completed", "message": "done"}
+        ],
     }
 
     view = build_view_model(state, checkpoint_id="cp-ui")
     assert set(view) == REQUIRED_KEYS
     rendered = json.dumps(view, sort_keys=True)
-    assert "sk-test-secret-value-not-for-display" not in rendered
-    assert "AIza-test-secret-value-not-for-display" not in rendered
-    assert "sk-ant-test-secret-value-not-for-display" not in rendered
+    assert openai_sentinel not in rendered
+    assert gemini_sentinel not in rendered
+    assert anthropic_sentinel not in rendered
 
 
 def test_ui_verifier_reports_view_model_and_secret_safety(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-another-secret-value-not-for-display")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret-sentinel-another-value")
     evidence = verify_ui_view_model()
     assert evidence.implemented is True
     assert evidence.verified is True
