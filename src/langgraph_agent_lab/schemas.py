@@ -7,10 +7,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+ClassificationRoute = Literal["simple", "tool", "missing_info", "risky", "error"]
+
+
 class ClassificationDecision(BaseModel):
     """Validated intent classification returned by the routing LLM."""
 
-    route: Literal["simple", "tool", "missing_info", "risky", "error"]
+    route: ClassificationRoute
     reason: str = Field(min_length=1, max_length=240)
 
 
