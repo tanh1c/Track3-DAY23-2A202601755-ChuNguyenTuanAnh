@@ -39,6 +39,8 @@ jobs:
       LANGGRAPH_INTERRUPT: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -77,6 +79,48 @@ jobs:
 
       - name: Tests
         run: make test
+
+      - name: Submission hygiene
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          source_files = list(Path("src").rglob("*.py"))
+          for path in source_files:
+              text = path.read_text(encoding="utf-8")
+              assert "TODO(student)" not in text, path
+              assert "NotImplementedError" not in text, path
+
+          assert not Path("data/grading").exists(), "hidden grading data must not be committed"
+
+          workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+          assert "workflow_dispatch:" in workflow
+          assert "pull_request:" not in workflow
+          assert "\n  push:" not in workflow
+          assert "schedule:" not in workflow
+          assert "cancel-in-progress: true" in workflow
+
+          token_patterns = (
+              re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+              re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+              re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
+          )
+          scan_roots = (Path("src"), Path("configs"), Path("tests"), Path(".github"))
+          for root in scan_roots:
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  try:
+                      text = path.read_text(encoding="utf-8")
+                  except UnicodeDecodeError:
+                      continue
+                  assert not any(pattern.search(text) for pattern in token_patterns), path
+
+          print("submission hygiene: ok")
+          PY
+          git diff --check origin/main...HEAD
 
       - name: Run live scenarios
         if: inputs.mode == 'full-live'
@@ -119,10 +163,13 @@ jobs:
 
           report = Path("reports/lab_report.md").read_text(encoding="utf-8")
           for section in (
-              "Architecture", "State Schema", "Scenario Results", "Failure Analysis",
-              "Persistence and Recovery", "Extension Work", "Improvement Plan",
+              "Student", "Architecture", "State Schema", "Scenario Results",
+              "Failure Analysis", "Persistence and Recovery", "Extension Work",
+              "Improvement Plan",
           ):
               assert section in report, section
+          assert "Chu Nguyen Tuan Anh" in report
+          assert "Commit:" in report
           print("semantic evidence: ok")
           PY
 
