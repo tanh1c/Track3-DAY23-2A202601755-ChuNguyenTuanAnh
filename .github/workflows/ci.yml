@@ -1,16 +1,207 @@
-name: ci
+name: manual-ci
+
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validation depth
+        required: true
+        default: static
+        type: choice
+        options:
+          - static
+          - full-live
+      provider:
+        description: LLM provider for full-live
+        required: true
+        default: openai
+        type: choice
+        options:
+          - openai
+          - google
+          - anthropic
+
+permissions:
+  contents: read
+
+concurrency:
+  group: day23-manual-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
+    env:
+      LANGGRAPH_INTERRUPT: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install -e '.[dev]'
-      - run: make lint
-      - run: make test
+          cache: pip
+
+      - name: Install static dependencies
+        if: inputs.mode == 'static'
+        run: python -m pip install -e '.[dev,sqlite]'
+
+      - name: Install live dependencies
+        if: inputs.mode == 'full-live'
+        shell: bash
+        run: |
+          case "${{ inputs.provider }}" in
+            openai) python -m pip install -e '.[dev,sqlite,openai]' ;;
+            google) python -m pip install -e '.[dev,sqlite,google]' ;;
+            anthropic) python -m pip install -e '.[dev,sqlite,anthropic]' ;;
+          esac
+
+      - name: Verify selected provider secret exists
+        if: inputs.mode == 'full-live'
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+        run: |
+          case "${{ inputs.provider }}" in
+            openai) test -n "$OPENAI_API_KEY" ;;
+            google) test -n "$GEMINI_API_KEY" ;;
+            anthropic) test -n "$ANTHROPIC_API_KEY" ;;
+          esac
+
+      - name: Lint
+        run: make lint
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Offline unit tests
+        env:
+          OPENAI_API_KEY: ""
+          GEMINI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          LLM_MODEL: ""
+        run: make test
+
+      - name: Submission hygiene
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          source_files = list(Path("src").rglob("*.py"))
+          for path in source_files:
+              text = path.read_text(encoding="utf-8")
+              assert "TODO(student)" not in text, path
+              assert "NotImplementedError" not in text, path
+
+          assert not Path("data/grading").exists(), "hidden grading data must not be committed"
+
+          workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+          assert "workflow_dispatch:" in workflow
+          assert "pull_request:" not in workflow
+          assert "\n  push:" not in workflow
+          assert "schedule:" not in workflow
+          assert "cancel-in-progress: true" in workflow
+
+          token_patterns = (
+              re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+              re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+              re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
+          )
+          scan_roots = (Path("src"), Path("configs"), Path("tests"), Path(".github"))
+          for root in scan_roots:
+              for path in root.rglob("*"):
+                  if not path.is_file():
+                      continue
+                  try:
+                      text = path.read_text(encoding="utf-8")
+                  except UnicodeDecodeError:
+                      continue
+                  assert not any(pattern.search(text) for pattern in token_patterns), path
+
+          print("submission hygiene: ok")
+          PY
+          git diff --check origin/main...HEAD
+
+      - name: Live graph smoke
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
+        run: python -m pytest tests/test_graph_smoke.py -q
+
+      - name: Run live scenarios
+        if: inputs.mode == 'full-live'
+        env:
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.provider == 'google' && secrets.GEMINI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_JUDGE: "true"
+        run: make run-scenarios
+
+      - name: Validate metrics schema
+        if: inputs.mode == 'full-live'
+        run: make grade-local
+
+      - name: Export compiled Mermaid graph
+        if: inputs.mode == 'full-live'
+        run: python -m langgraph_agent_lab.cli export-graph --output outputs/graph.mmd
+
+      - name: Validate semantic evidence
+        if: inputs.mode == 'full-live'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("outputs/metrics.json").read_text(encoding="utf-8"))
+          assert payload["total_scenarios"] >= 7, payload["total_scenarios"]
+          assert payload["success_rate"] == 1.0, payload["success_rate"]
+          assert payload["resume_success"] is True, payload["resume_success"]
+          scenarios = payload["scenario_metrics"]
+          assert any(item["retry_count"] > 0 for item in scenarios)
+          assert any(
+              item["approval_required"] and item["approval_observed"]
+              for item in scenarios
+          )
+          assert all(item["latency_ms"] > 0 for item in scenarios)
+
+          graph = Path("outputs/graph.mmd").read_text(encoding="utf-8")
+          for node in (
+              "intake", "classify", "tool", "evaluate", "answer", "clarify",
+              "risky_action", "approval", "retry", "dead_letter", "finalize",
+          ):
+              assert node in graph, node
+
+          report = Path("reports/lab_report.md").read_text(encoding="utf-8")
+          for section in (
+              "Student", "Architecture", "State Schema", "Scenario Results",
+              "Failure Analysis", "Persistence and Recovery", "Extension Work",
+              "Improvement Plan",
+          ):
+              assert section in report, section
+          assert "Chu Nguyen Tuan Anh" in report
+          assert "Commit:" in report
+          print("semantic evidence: ok")
+          PY
+
+      - name: Upload grading evidence
+        if: always() && inputs.mode == 'full-live'
+        uses: actions/upload-artifact@v4
+        with:
+          name: day23-evidence-${{ github.run_number }}
+          path: |
+            outputs/metrics.json
+            outputs/graph.mmd
+            reports/lab_report.md
+          if-no-files-found: warn
+          retention-days: 3
