@@ -81,15 +81,25 @@ def test_answer_uses_grounded_workflow_context(monkeypatch) -> None:
     assert "approved" in prompt.lower()
 
 
-def test_llm_judge_uses_one_structured_verdict(monkeypatch) -> None:
+def test_llm_judge_uses_one_structured_verdict_with_explicit_budget(monkeypatch) -> None:
     fake = FakeLLM(EvaluationDecision(verdict="success", reason="tool result is usable"))
+    captured: dict[str, object] = {}
+
+    def fake_get_llm(**kwargs):
+        captured.update(kwargs)
+        return fake
+
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(nodes, "configured_provider", lambda: "openai", raising=False)
-    monkeypatch.setattr(nodes, "get_llm", lambda **_: fake, raising=False)
+    monkeypatch.setattr(nodes, "get_llm", fake_get_llm, raising=False)
 
     update = nodes.evaluate_node({"tool_results": ["SUCCESS: found order"]})
 
     assert update["evaluation_result"] == "success"
     assert fake.schemas == [EvaluationDecision]
     assert len(fake.prompts) == 1
+    assert captured["timeout"] == 20.0
+    assert captured["max_retries"] == 0
     assert update["events"][0]["metadata"]["mode"] == "llm-as-judge"
+    assert update["events"][0]["metadata"]["timeout_seconds"] == 20.0
+    assert update["events"][0]["metadata"]["max_retries"] == 0
