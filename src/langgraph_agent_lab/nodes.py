@@ -31,6 +31,17 @@ Ticket:
 """
 
 
+def interrupt(payload: dict[str, object]) -> Any:
+    """Lazy LangGraph interrupt wrapper so tests can inject reviewer decisions."""
+    from langgraph.types import interrupt as langgraph_interrupt
+
+    return langgraph_interrupt(payload)
+
+
+def _interrupt_enabled() -> bool:
+    return os.getenv("LANGGRAPH_INTERRUPT", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _message_text(response: Any) -> str:
     """Normalize common LangChain response shapes to non-empty text."""
     content = getattr(response, "content", response)
@@ -270,9 +281,7 @@ def risky_action_node(state: AgentState) -> dict[str, Any]:
 def approval_node(state: AgentState) -> dict[str, Any]:
     """Use mock approval by default; optionally interrupt for real HITL review."""
     proposed_action = state.get("proposed_action", "")
-    if os.getenv("LANGGRAPH_INTERRUPT", "false").lower() == "true":
-        from langgraph.types import interrupt
-
+    if _interrupt_enabled():
         resumed = interrupt(
             {
                 "type": "approval_required",
