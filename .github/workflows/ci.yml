@@ -157,7 +157,9 @@ jobs:
           assert events, result
           metadata = events[-1].get("metadata", {})
           assert metadata.get("mode") == "llm-as-judge", metadata
-          print("live llm-as-judge: ok")
+          assert metadata.get("timeout_seconds") == 20.0, metadata
+          assert metadata.get("max_retries") == 0, metadata
+          print("live llm-as-judge: bounded structured call ok")
           PY
 
       - name: Run live scenarios
@@ -197,7 +199,6 @@ jobs:
             --metrics outputs/metrics.json \
             --report reports/lab_report.md \
             --llm-judge-verified \
-            --durable-recovery-verified \
             --mermaid-verified
 
       - name: Validate semantic evidence
@@ -233,6 +234,15 @@ jobs:
           assert bonus["llm_as_judge_verified"] is True
           assert bonus["durable_recovery_verified"] is True
           assert bonus["mermaid_export_verified"] is True
+          recovery = bonus["recovery"]
+          assert recovery["verified"] is True
+          assert recovery["writer_pid"] > 0
+          assert recovery["reader_pid"] > 0
+          assert recovery["writer_pid"] != recovery["reader_pid"]
+          assert recovery["distinct_processes"] is True
+          assert recovery["same_thread_id"] is True
+          assert recovery["persisted_finalized"] is True
+          assert recovery["thread_id"]
           assert bonus["hitl"]["verified"] is True
           assert bonus["hitl"]["interrupt_observed"] is True
           assert bonus["hitl"]["same_thread_id"] is True
@@ -267,7 +277,10 @@ jobs:
           ):
               assert extension in report, extension
           assert "streamlit run src/langgraph_agent_lab/ui.py" in report
-          assert "Chu Nguyen Tuan Anh" in report
+          assert "Chu Nguyễn Tuấn Anh" in report
+          assert "MSSV: `2A202601755`" in report
+          assert "timeout=20s" in report
+          assert "writer PID" in report and "reader PID" in report
           assert "Commit:" in report
           print("semantic evidence: ok")
           PY
