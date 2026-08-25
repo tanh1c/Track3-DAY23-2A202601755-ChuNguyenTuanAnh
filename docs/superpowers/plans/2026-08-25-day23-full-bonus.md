@@ -139,7 +139,8 @@ Use this public shape:
 
 ```python
 from pathlib import Path
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class HitlEvidence(BaseModel):
@@ -181,10 +182,10 @@ class BonusEvidence(BaseModel):
     llm_as_judge_verified: bool = False
     durable_recovery_verified: bool = False
     mermaid_export_verified: bool = False
-    hitl: HitlEvidence = HitlEvidence()
-    time_travel: TimeTravelEvidence = TimeTravelEvidence()
-    parallel_send: ParallelSendEvidence = ParallelSendEvidence()
-    streamlit_ui: UiEvidence = UiEvidence()
+    hitl: HitlEvidence = Field(default_factory=HitlEvidence)
+    time_travel: TimeTravelEvidence = Field(default_factory=TimeTravelEvidence)
+    parallel_send: ParallelSendEvidence = Field(default_factory=ParallelSendEvidence)
+    streamlit_ui: UiEvidence = Field(default_factory=UiEvidence)
 ```
 
 `validate_bonus_evidence()` must require the following before a nested extension may have `verified=True`:
@@ -337,7 +338,8 @@ Required checks:
 ```python
 history = list_checkpoints(graph, thread_id)
 assert history
-checkpoint = next(item for item in history if item.next_nodes)
+checkpoint_info = next(item for item in history if item.next_nodes)
+selected_snapshot = find_checkpoint(graph, thread_id, checkpoint_info.checkpoint_id)
 
 with pytest.raises(ValueError, match="Unknown checkpoint"):
     find_checkpoint(graph, thread_id, "missing-checkpoint")
@@ -350,6 +352,7 @@ fork_config, forked = fork_checkpoint(graph, selected_snapshot, {"query": "forke
 original_ids_after = {item.checkpoint_id for item in list_checkpoints(graph, thread_id)}
 assert original_ids_before <= original_ids_after
 assert fork_config["configurable"]["checkpoint_id"] not in original_ids_before
+assert any(event["node"] == "finalize" for event in forked["events"])
 ```
 
 - [ ] **Step 2: Run focused tests and confirm RED**
@@ -419,6 +422,7 @@ git commit -m "feat: add checkpoint replay and fork time travel"
 
 **Interfaces:**
 - Produces: `ParallelState` TypedDict with reducer-managed `results`.
+- Produces: `dispatch_node(state: ParallelState) -> dict[str, object]`.
 - Produces: `plan_tasks(state: ParallelState) -> list[Send]`.
 - Produces: `run_task(state: TaskState) -> dict[str, list[str]]`.
 - Produces: `aggregate_results(state: ParallelState) -> dict[str, str]`.
@@ -459,11 +463,12 @@ Use the documented LangGraph map-reduce shape:
 ```python
 from operator import add
 from typing import Annotated, TypedDict
+
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 
-class ParallelState(TypedDict):
+class ParallelState(TypedDict, total=False):
     tasks: list[str]
     results: Annotated[list[str], add]
     aggregate: str
@@ -471,6 +476,10 @@ class ParallelState(TypedDict):
 
 class TaskState(TypedDict):
     task: str
+
+
+def dispatch_node(state: ParallelState) -> dict[str, object]:
+    return {}
 
 
 def plan_tasks(state: ParallelState) -> list[Send]:
@@ -482,10 +491,21 @@ def run_task(state: TaskState) -> dict[str, list[str]]:
 
 
 def aggregate_results(state: ParallelState) -> dict[str, str]:
-    return {"aggregate": "|".join(sorted(state["results"]))}
+    return {"aggregate": "|".join(sorted(state.get("results", [])))}
 ```
 
-Wire `START -> dispatch`, conditional `dispatch -> Send("run_task", ...)`, `run_task -> aggregate`, `aggregate -> END`. `dispatch` should not add another worker result.
+Build exactly this isolated topology:
+
+```python
+builder = StateGraph(ParallelState)
+builder.add_node("dispatch", dispatch_node)
+builder.add_node("run_task", run_task)
+builder.add_node("aggregate", aggregate_results)
+builder.add_edge(START, "dispatch")
+builder.add_conditional_edges("dispatch", plan_tasks, ["run_task"])
+builder.add_edge("run_task", "aggregate")
+builder.add_edge("aggregate", END)
+```
 
 The verifier must inspect `plan_tasks()` output to set `used_send=True`, invoke the compiled bonus graph, and compare sorted result membership to sorted input membership.
 
