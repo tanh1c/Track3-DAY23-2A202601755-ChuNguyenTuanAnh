@@ -6,6 +6,7 @@ from langgraph_agent_lab.bonus_evidence import (
     BonusEvidence,
     HitlEvidence,
     ParallelSendEvidence,
+    RecoveryEvidence,
     TimeTravelEvidence,
     UiEvidence,
     validate_bonus_evidence,
@@ -13,10 +14,24 @@ from langgraph_agent_lab.bonus_evidence import (
 )
 
 
+def _verified_recovery() -> RecoveryEvidence:
+    return RecoveryEvidence(
+        implemented=True,
+        verified=True,
+        writer_pid=101,
+        reader_pid=202,
+        distinct_processes=True,
+        same_thread_id=True,
+        persisted_finalized=True,
+        thread_id="recovery-thread",
+    )
+
+
 def test_bonus_evidence_rejects_unproven_hitl() -> None:
     evidence = BonusEvidence(
         llm_as_judge_verified=True,
         durable_recovery_verified=True,
+        recovery=_verified_recovery(),
         mermaid_export_verified=True,
         hitl=HitlEvidence(
             implemented=True,
@@ -28,6 +43,24 @@ def test_bonus_evidence_rejects_unproven_hitl() -> None:
         ),
     )
     with pytest.raises(ValueError, match="HITL"):
+        validate_bonus_evidence(evidence)
+
+
+def test_bonus_evidence_rejects_unproven_recovery() -> None:
+    evidence = BonusEvidence(
+        durable_recovery_verified=True,
+        recovery=RecoveryEvidence(
+            implemented=True,
+            verified=True,
+            writer_pid=101,
+            reader_pid=101,
+            distinct_processes=False,
+            same_thread_id=True,
+            persisted_finalized=True,
+            thread_id="recovery-thread",
+        ),
+    )
+    with pytest.raises(ValueError, match="recovery"):
         validate_bonus_evidence(evidence)
 
 
@@ -79,8 +112,10 @@ def test_write_bonus_evidence_round_trips(tmp_path: Path) -> None:
     evidence = BonusEvidence(
         llm_as_judge_verified=True,
         durable_recovery_verified=True,
+        recovery=_verified_recovery(),
         mermaid_export_verified=True,
     )
     write_bonus_evidence(evidence, output)
     loaded = BonusEvidence.model_validate_json(output.read_text(encoding="utf-8"))
     assert loaded.llm_as_judge_verified is True
+    assert loaded.recovery.distinct_processes is True
